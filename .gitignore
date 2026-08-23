@@ -1,0 +1,18 @@
+# Tooling / local artifacts
+.playwright-mcp/
+*.log
+
+# Environment & secrets
+.env*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Misc
+node_modules/
+*.bak

@@ -5,12 +5,12 @@
   "description": "LLM API benchmark — zero-build web app plus a Tauri 2 desktop shell",
   "type": "module",
   "scripts": {
-    "web": "node serve.py",
+    "web": "python serve.py",
     "build:web": "node scripts/build-web.mjs",
     "icons": "node scripts/make-icons.mjs",
     "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build"
+    "dev": "node scripts/build-web.mjs && tauri dev",
+    "build": "node scripts/build-web.mjs && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

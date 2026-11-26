@@ -77,9 +77,35 @@ npx serve .
 
 > The app itself only needs a modern browser.
 
+**When a local endpoint refuses browser CORS:** a cross-origin response must carry `Access-Control-Allow-Origin` and survive an `OPTIONS` preflight; many local model gateways do neither (the preflight 404s), so the browser blocks the call before it is sent — no front-end can work around that. Put the endpoint behind the same-origin proxy instead:
+
+```bash
+python serve.py --proxy http://127.0.0.1:3425
+```
+
+Then set the target's **Base URL** to `http://127.0.0.1:8000/api` — the local server forwards the call, same origin, so no CORS check applies. SSE is streamed chunk by chunk, so first-token latency and speed stay accurate (measured: first chunk at 30 ms, nothing buffered).
+
+### Desktop app (Tauri 2)
+
+The same front-end also ships as a native window. The desktop build sends HTTP from Rust (reqwest), so **there is no browser same-origin policy** — no CORS, and no need for `--proxy`.
+
+```bash
+npm install     # installs only @tauri-apps/cli
+npm run dev     # build dist/ and open the window
+npm run build   # produce installers (Windows .msi/.exe, macOS .dmg, Linux .deb/.AppImage)
+```
+
+- The first build needs Rust (rustup + MSVC Build Tools) and WebView2 (bundled with Win11).
+- Installers land around 8–12 MB; the front-end is still the same handful of files, `dist/` is generated at build time and not committed.
+- Cross-platform: build on Windows / macOS / Linux natively (a CI matrix works well); Linux needs WebKitGTK 4.1+.
+
+> If `cargo` stalls fetching crates (mirror 403 / connection reset), retry against the default registry:
+> `CARGO_HOME=/tmp/cargo-home cargo build` (`set CARGO_HOME=D:\cargo-home` on Windows), or fix the mirror in `~/.cargo/config.toml`.
+
 ## Configuration
 
 1. **Add a target row**: pick a protocol, enter the base URL (auto-completed), API key, and models — one model per line.
+   Not sure which protocol the service speaks? Click **Detect protocol** next to the selector: it probes every protocol with this row's base URL and key — model list first (no tokens), then one 1-token, non-streaming completion — and scores the evidence: a 2xx with the expected shape wins, an auth rejection or matching error shape comes next (the route exists), a 404 is ruled out. The best-scoring protocol is selected automatically and a dialog lists every verdict with its evidence (including the trial model).
 2. **Add more targets** to compare providers or models side by side; disable a target to keep its config but skip it in runs.
 3. **Test parameters**: prompts, rounds, and advanced settings — temperature, top_p, max tokens, system prompt, concurrency.
 4. **Model prices** (optional, for cost analysis): one model per line, `model=input_price,output_price` in $/1M tokens:
@@ -116,10 +142,14 @@ llm-speedtest/
 ├── index.html          # Single-page UI
 ├── app.js              # Test orchestration, statistics, history, export
 ├── api-handlers.js     # Protocol implementations (6 providers) & streaming parser
+├── transport.js        # Transport: fetch on the web, Rust bridge on desktop
 ├── i18n.js             # English / 中文 translations
 ├── styles.css          # Styling (light theme)
-├── serve.py            # Local static server that opens your browser
+├── serve.py            # Local static server (+ optional same-origin proxy)
 ├── start.bat           # One-click launch on Windows
+├── scripts/            # Build helpers (dist/ assembly, icon generation)
+├── src-tauri/          # Tauri 2 desktop shell (Rust + reqwest)
+├── package.json        # Only for @tauri-apps/cli and npm scripts
 └── LICENSE             # MIT
 ```
 

@@ -434,6 +434,74 @@ function sleepAbortable(ms, signal) {
     });
 }
 
+// ── Protocol detection ───────────────────────────────────────────────────
+// Probes every protocol with the cheapest requests that still yield evidence:
+// the model list (no tokens) plus one 1-token, non-streaming completion. A 2xx
+// outranks an error body whose *shape* proves the route exists, so a wrong API
+// key narrows the candidates instead of hiding them.
+
+const DETECT_MODELS = {
+    'openai-chat-completions': 'gpt-4o-mini',
+    'openai-responses': 'gpt-4o-mini',
+    'anthropic-messages': 'claude-3-5-haiku-latest',
+    'google-generative-ai': 'gemini-2.0-flash',
+    'ollama-chat': 'llama3.2',
+    'cohere-chat': 'command-r7b-12-2024'
+};
+
+const DETECT_SHAPE = {
+    'openai-chat-completions': {
+        models: j => Array.isArray(j.data) && j.data.some(m => m && typeof m.id === 'string'),
+        ok: j => Array.isArray(j.choices) && j.choices.length > 0,
+        error: j => !!(j.error && typeof j.error === 'object')
+    },
+    'openai-responses': {
+        models: j => Array.isArray(j.data) && j.data.some(m => m && typeof m.id === 'string'),
+        ok: j => Array.isArray(j.output) || j.object === 'response' || !!(j.response && Array.isArray(j.response.output)),
+        error: j => !!(j.error && typeof j.error === 'object')
+    },
+    'anthropic-messages': {
+        models: j => Array.isArray(j.data) && j.data.some(m => m && typeof m.id === 'string'),
+        ok: j => Array.isArray(j.content) || j.type === 'message',
+        error: j => j.type === 'error' && !!j.error
+    },
+    'google-generative-ai': {
+        models: j => Array.isArray(j.models) && j.models.some(m => m && typeof m.name === 'string'),
+        ok: j => Array.isArray(j.candidates),
+        error: j => !!(j.error && (j.error.status || Number.isFinite(j.error.code)))
+    },
+    'ollama-chat': {
+        models: j => Array.isArray(j.models) && j.models.some(m => m && (typeof m.name === 'string' || typeof m.model === 'string')),
+        ok: j => !!(j.message || typeof j.done === 'boolean'),
+        error: j => typeof j.error === 'string'
+    },
+    'cohere-chat': {
+        models: j => Array.isArray(j.models) && j.models.some(m => m && typeof m.name === 'string'),
+        ok: j => !!(j.message && typeof j.message === 'object'),
+        error: j => typeof j.message === 'string' && !j.error
+    }
+};
+
+async function requestOnce(url, init, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('timeout'), timeoutMs);
+    try {
+        const response = await appFetch(url, Object.assign({}, init, { signal: controller.signal }));
+        const text = await response.text();
+        return { ok: response.ok, status: response.status, text };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function parseJsonOrNull(text) {
+    try {
+        return JSON.parse(text);
+    } catch (_) {
+        return null;
+    }
+}
+
 class APIHandler {
     constructor(protocol, baseUrl, apiKey, options = {}) {
         this.protocol = protocol;
@@ -517,16 +585,18 @@ class APIHandler {
     }
 
     // Fetch model list → string[]
+    // GET request for the model list — shared by fetchModels and detection.
+    modelsRequest() {
+        const modelsPath = this.getModelsPath();
+        const url = this.protocol === 'google-generative-ai'
+            ? smartCompleteUrl(this.baseUrl, modelsPath) + '?pageSize=1000'
+            : smartCompleteUrl(this.baseUrl, modelsPath);
+        return { url, headers: this.buildHeaders() };
+    }
+
     async fetchModels(signal) {
         const spec = this.spec;
-        const modelsPath = this.getModelsPath();
-        let url;
-        if (spec.id === 'google-generative-ai') {
-            url = smartCompleteUrl(this.baseUrl, modelsPath) + '?pageSize=1000';
-        } else {
-            url = smartCompleteUrl(this.baseUrl, modelsPath);
-        }
-        const headers = this.buildHeaders();
+        const { url, headers } = this.modelsRequest();
 
         // GET is idempotent — retry transient failures (network errors / 5xx)
         // up to 3 times with backoff. Waits are abort-aware.
@@ -537,7 +607,7 @@ class APIHandler {
             if (signal && signal.aborted) break;
             fetchErr = null;
             try {
-                response = await fetch(url, { method: 'GET', headers, signal });
+                response = await appFetch(url, { method: 'GET', headers, signal });
                 if (!response.ok && response.status < 500) break;   // 4xx fails fast
             } catch (err) {
                 if (signal && signal.aborted) throw new Error('Cancelled by user');
@@ -592,7 +662,7 @@ class APIHandler {
 
         try {
             const built = this.buildChatRequest(model, prompt);
-            let response = await fetch(built.url, {
+            let response = await appFetch(built.url, {
                 method: 'POST',
                 headers: built.headers,
                 body: JSON.stringify(built.body),
@@ -606,7 +676,7 @@ class APIHandler {
                 if (response.status === 400 && built.body.stream_options && /stream_options/i.test(errorData)) {
                     const retryBody = Object.assign({}, built.body);
                     delete retryBody.stream_options;
-                    response = await fetch(built.url, {
+                    response = await appFetch(built.url, {
                         method: 'POST',
                         headers: built.headers,
                         body: JSON.stringify(retryBody),
@@ -865,6 +935,99 @@ class APIHandler {
 
     estimateTokens(text) {
         return estimateTokens(text);
+    }
+
+    // ── Protocol detection ────────────────────────────────────────────────
+    // Try every protocol against one base URL and rank by evidence.
+    static async detectProtocol(baseUrl, apiKey, model, options = {}) {
+        const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000;
+        const ids = Object.keys(PROTOCOLS);
+        const results = await Promise.all(ids.map(id =>
+            APIHandler.probeProtocol(id, baseUrl, apiKey, model, timeoutMs)));
+        results.sort((a, b) => (b.score - a.score) || (ids.indexOf(a.protocol) - ids.indexOf(b.protocol)));
+        return {
+            best: results.length && results[0].score >= 3 ? results[0].protocol : null,
+            results
+        };
+    }
+
+    // One protocol, two requests. Never throws: the outcome is part of the result.
+    static async probeProtocol(id, baseUrl, apiKey, model, timeoutMs) {
+        const spec = PROTOCOLS[id];
+        const shapes = DETECT_SHAPE[id];
+        const typed = String(model || '').trim();
+        const probeModel = typed || DETECT_MODELS[id];
+        const handler = new APIHandler(id, baseUrl, apiKey, { maxTokens: 1, temperature: 0, topP: 1 });
+        const result = {
+            protocol: id,
+            label: spec.label,
+            model: probeModel,
+            usingDefaultModel: !typed,
+            score: 0,
+            ok: false,
+            stage: null,
+            modelsStatus: null,
+            chatStatus: null,
+            reason: null
+        };
+
+        // Stage 1 — model list, no tokens spent.
+        try {
+            const { url, headers } = handler.modelsRequest();
+            const res = await requestOnce(url, { method: 'GET', headers }, timeoutMs);
+            result.modelsStatus = res.status;
+            const json = res.ok ? parseJsonOrNull(res.text) : null;
+            if (json && typeof json === 'object' && shapes.models(json)) {
+                result.score += 3;
+                result.stage = 'models';
+                result.reason = 'models';
+            }
+        } catch (_) {
+            // A dead models route says nothing about the chat route.
+        }
+
+        // Stage 2 — one minimal completion, streaming off (Gemini uses the
+        // non-SSE generateContent path so no ?alt=sse is needed).
+        const chatUrl = id === 'google-generative-ai'
+            ? smartCompleteUrl(baseUrl, '/v1beta/models/' + probeModel.split('/').map(encodeURIComponent).join('/') + ':generateContent')
+            : smartCompleteUrl(baseUrl, spec.chatPath);
+        const body = spec.buildBody(probeModel, 'ping', { maxTokens: 1, temperature: 0, topP: 1, systemPrompt: '' });
+        if (id !== 'google-generative-ai') body.stream = false;
+        if (body.stream_options) delete body.stream_options;
+
+        try {
+            const res = await requestOnce(chatUrl, {
+                method: 'POST',
+                headers: handler.buildHeaders(),
+                body: JSON.stringify(body)
+            }, timeoutMs);
+            const json = parseJsonOrNull(res.text);
+            result.chatStatus = res.status;
+            if (res.ok) {
+                result.stage = 'chat';
+                if (json && typeof json === 'object' && shapes.ok(json)) {
+                    result.score += 10;
+                    result.ok = true;
+                    result.reason = 'ok';
+                } else {
+                    result.score += 6;
+                    result.reason = 'okBody';
+                }
+            } else if (res.status === 404 || res.status === 405) {
+                // A missing route is a missing route, whatever the body looks like.
+                result.reason = res.status === 404 ? 'notFound' : 'method';
+            } else if (json && typeof json === 'object' && shapes.error(json)) {
+                result.score += 5;
+                result.stage = 'chat';
+                result.reason = res.status === 401 || res.status === 403 ? 'auth' : 'error';
+            } else {
+                result.reason = 'http';
+            }
+        } catch (err) {
+            const msg = String((err && err.message) || err);
+            result.reason = /abort|timed? ?out|timeout/i.test(msg) ? 'timeout' : 'network';
+        }
+        return result;
     }
 
     // ── Static helpers ─────────────────────────────────────────────────────

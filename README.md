@@ -77,9 +77,36 @@ npx serve .
 
 > 应用本身只需要一个现代浏览器。
 
+**本机接口拒绝跨域（CORS）怎么办：**浏览器只接受带 `Access-Control-Allow-Origin` 的跨域响应，并会先发 `OPTIONS` 预检；不少本地模型网关两者都没有（预检直接 404），于是请求在浏览器里就被拦下，换哪个前端都一样。把它挂到同源反代上即可：
+
+```bash
+python serve.py --proxy http://127.0.0.1:3425
+```
+
+然后把目标的「基础地址」填成 **`http://127.0.0.1:8000/api`**——请求由本地服务转发，与页面同源，浏览器不再做 CORS 检查；SSE 逐块透传，首字延迟与速度统计不受影响（已实测首块 30ms 到达，未缓冲）。
+
+### 桌面应用（Tauri 2）
+
+同一套前端也能打包成原生窗口应用。桌面版把 HTTP 交给 Rust（reqwest）发出，**不存在浏览器同源策略**，所以不需要 CORS，也不必用 `--proxy`。
+
+```bash
+npm install     # 只装 @tauri-apps/cli
+npm run dev     # 构建 dist/ 并打开窗口
+npm run build   # 产出安装包（Windows .msi/.exe、macOS .dmg、Linux .deb/.AppImage）
+```
+
+- 首次编译需要 Rust（rustup + MSVC Build Tools）和 WebView2（Win11 自带）。
+- 安装包约 8–12 MB；前端仍是那几个文件，`dist/` 在构建时生成（不入库）。
+- 跨平台：Windows / macOS / Linux 各自在本机编译（CI 可用三系统矩阵），Linux 需 WebKitGTK 4.1+。
+
+> 若 `cargo` 卡在拉依赖（镜像 403 / 连接被重置），换默认源重试：
+> `CARGO_HOME=/tmp/cargo-home cargo build`（Windows：`set CARGO_HOME=D:\cargo-home`），
+> 或修好 `~/.cargo/config.toml` 里的镜像地址。
+
 ## 配置说明
 
 1. **添加目标行**：选择协议、填写 Base URL（自动补全）、API Key、模型（每行一个）。
+   不确定对方是哪种协议？点协议旁的 **检测协议**：用这一行的 Base URL 和 Key 逐个协议试探——先取模型列表（不耗 Token），再发一个 1-token、关闭流式的补全——按证据打分：2xx 且结构符合最可信，鉴权被拒 / 错误结构匹配次之（说明路由存在），404 直接排除；自动选中得分最高者，并弹出每个协议的判定与依据（含试用的模型名）。
 2. **添加更多目标**横向对比不同服务商或模型；禁用某目标可保留配置但跳过测试。
 3. **测试参数**：提示词、轮次，以及高级设置——temperature、top_p、最大 Token、系统提示词、并发数。
 4. **模型价格**（可选，用于成本分析）：每行一个模型，`模型=输入价,输出价`，单位 $/百万 Token：
@@ -116,10 +143,14 @@ llm-speedtest/
 ├── index.html          # 单页应用界面
 ├── app.js              # 测试编排、统计、历史、导出
 ├── api-handlers.js     # 六种协议实现与流式解析
+├── transport.js        # 传输层：网页用 fetch，桌面版走 Rust
 ├── i18n.js             # 中英文翻译
 ├── styles.css          # 样式（浅色主题）
-├── serve.py            # 本地静态服务器，启动后自动打开浏览器
+├── serve.py            # 本地静态服务器（可选同源反代），启动后自动打开浏览器
 ├── start.bat           # Windows 一键启动
+├── scripts/            # 构建脚本（生成 dist/ 与图标）
+├── src-tauri/          # Tauri 2 桌面外壳（Rust + reqwest）
+├── package.json        # 仅用于 @tauri-apps/cli 与 npm 脚本
 └── LICENSE             # MIT 许可证
 ```
 

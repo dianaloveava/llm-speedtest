@@ -16,3 +16,10 @@ Thumbs.db
 # Misc
 node_modules/
 *.bak
+tmp/
+
+# Tauri desktop shell
+dist/
+src-tauri/target/
+src-tauri/gen/
+

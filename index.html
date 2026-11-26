@@ -298,6 +298,21 @@
         </div>
     </dialog>
 
+    <dialog id="detectDialog" class="dialog dialog-wide" aria-labelledby="detectTitle">
+        <div class="dialog-head">
+            <h2 id="detectTitle" data-i18n="detectTitle">协议检测结果</h2>
+            <form method="dialog">
+                <button class="icon-btn" data-i18n-title="close" data-i18n-aria="close">✕</button>
+            </form>
+        </div>
+        <div class="dialog-body">
+            <div id="detectList" class="detect-list"></div>
+        </div>
+        <div class="dialog-foot">
+            <form method="dialog"><button class="btn btn-secondary" data-i18n="close">关闭</button></form>
+        </div>
+    </dialog>
+
     <!-- 结果详情弹层 -->
     <dialog id="detailDialog" class="dialog dialog-wide" aria-labelledby="detailTitle">
         <div class="dialog-head">
@@ -367,6 +382,7 @@
     <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
     <script src="i18n.js"></script>
+    <script src="transport.js"></script>
     <script src="api-handlers.js"></script>
     <script src="app.js"></script>
 </body>

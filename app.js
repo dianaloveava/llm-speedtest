@@ -253,7 +253,10 @@ class APITester {
             <div class="target-fields">
                 <div class="field">
                     <label class="field-label" for="tp-${id}" data-i18n="targetProtocol">Protocol</label>
-                    <select id="tp-${id}" class="target-protocol">${this.protocolOptionsHtml(protocol)}</select>
+                    <div class="protocol-row">
+                        <select id="tp-${id}" class="target-protocol">${this.protocolOptionsHtml(protocol)}</select>
+                        <button type="button" class="btn btn-ghost btn-sm detect-protocol" data-i18n="detectProtocol">检测协议</button>
+                    </div>
                 </div>
                 <div class="field">
                     <label class="field-label" for="tu-${id}" data-i18n="targetApiUrl">Base URL</label>
@@ -323,6 +326,7 @@ class APITester {
         row.querySelector('.act-down').addEventListener('click', () => this.moveTarget(row, 1));
         row.querySelector('.act-remove').addEventListener('click', () => this.removeTargetRow(row));
         row.querySelector('.fetch-models-btn').addEventListener('click', () => this.fetchModels(row));
+        row.querySelector('.detect-protocol').addEventListener('click', () => this.detectTargetProtocol(row));
 
         toggleKeyBtn.addEventListener('click', () => {
             if (apiKeyInput.type === 'password') {
@@ -817,6 +821,74 @@ class APITester {
             }
         }
         return tasks;
+    }
+
+    // ── Protocol detection ────────────────────────────────────────────────
+    // Probe every protocol against this row's URL/key, apply the winner and
+    // show the evidence behind the choice.
+    async detectTargetProtocol(row) {
+        const btn = row.querySelector('.detect-protocol');
+        const apiUrl = row.querySelector('.target-apiurl').value.trim();
+        if (!apiUrl) {
+            this.showToast(i18n.t('urlEmpty'), 'error');
+            return;
+        }
+        const apiKey = row.querySelector('.target-apikey').value;
+        const firstModel = row.querySelector('.target-models').value
+            .split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+
+        if (btn) { btn.disabled = true; btn.textContent = i18n.t('detecting'); }
+        try {
+            const result = await APIHandler.detectProtocol(apiUrl, apiKey, firstModel, { timeoutMs: 8000 });
+            if (result.best) {
+                const sel = row.querySelector('.target-protocol');
+                sel.value = result.best;
+                sel.dispatchEvent(new Event('change'));
+                this.showToast(i18n.t('protocolDetected', { label: APIHandler.getProtocol(result.best).label }), 'success');
+            } else {
+                this.showToast(i18n.t('protocolNotDetected'), 'error');
+            }
+            this.showDetectResults(result);
+        } catch (err) {
+            this.showToast(i18n.t('protocolNotDetected') + ': ' + err.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = i18n.t('detectProtocol'); }
+        }
+    }
+
+    showDetectResults(result) {
+        const list = document.getElementById('detectList');
+        if (!list) return;
+        list.innerHTML = result.results.map(r => `
+            <div class="detect-row${r.protocol === result.best ? ' is-best' : ''}">
+                <span class="detect-label">${this.escapeHtml(r.label)}${r.protocol === result.best ? '<span class="detect-pick">✓</span>' : ''}</span>
+                <span class="badge ${r.ok ? 'badge-success' : r.score >= 3 ? 'badge-warning' : 'badge-neutral'}">${this.escapeHtml(this.detectVerdict(r))}</span>
+                <span class="detect-detail">${this.escapeHtml(this.detectDetail(r))}</span>
+            </div>`).join('');
+        const dialog = document.getElementById('detectDialog');
+        if (dialog && !dialog.open) dialog.showModal();
+    }
+
+    detectVerdict(result) {
+        if (result.ok) return i18n.t('detectOk');
+        return result.score >= 3 ? i18n.t('detectPartial') : i18n.t('detectNone');
+    }
+
+    detectDetail(result) {
+        const parts = [];
+        if (Number.isFinite(result.modelsStatus)) {
+            parts.push(`${i18n.t('detectStageModels')} HTTP ${result.modelsStatus}`);
+        }
+        if (Number.isFinite(result.chatStatus)) {
+            parts.push(`${i18n.t('detectStageChat')} HTTP ${result.chatStatus}`);
+        }
+        if (result.reason && result.reason !== 'models') {
+            const key = 'detectReason' + result.reason.charAt(0).toUpperCase() + result.reason.slice(1);
+            const text = i18n.t(key);
+            if (text !== key) parts.push(text);
+        }
+        parts.push(i18n.t(result.usingDefaultModel ? 'detectDefaultModel' : 'detectTrialModel', { model: result.model }));
+        return parts.join(' · ');
     }
 
     // A run still shutting down (Stop pressed) must settle before a new one starts;

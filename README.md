@@ -6,140 +6,140 @@
 [![GitHub license](https://img.shields.io/github/license/dianaloveava/llm-speedtest?style=flat-square)](https://github.com/dianaloveava/llm-speedtest/blob/main/LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/dianaloveava/llm-speedtest?style=flat-square)](https://github.com/dianaloveava/llm-speedtest/issues)
 
-**Speedtest for LLM APIs — measure TTFT, throughput, tokens and cost across providers, right in your browser.**
+**给大模型 API 测速——在浏览器里直接测量各服务商的首字延迟、吞吐、Token 用量与成本。**
 
-**Languages:** [English](README.md) | [中文](README_CN.md)
+**文档语言：** 中文 | [English](README_EN.md) · **界面默认中文**（可在页头切换为 English）。
 
 </div>
 
-## Overview
+## 简介
 
-LLM SpeedTest is a zero-dependency, browser-based benchmark tool for Large Language Model APIs. Configure multiple API targets (different providers, protocols, or models), fire concurrent streaming requests at them, and compare them side by side on latency, throughput, token usage, and cost.
+LLM SpeedTest 是一个零依赖、纯浏览器端的大模型 API 基准测试工具。配置多个 API 目标（不同服务商、协议或模型），并发发送流式请求，在延迟、吞吐、Token 用量和成本四个维度上横向对比。
 
-Everything runs locally in your browser: API keys are stored only in your browser's localStorage, requests go directly from your browser to the endpoints you configure, and there is no backend, no telemetry, and no relay.
+一切都在本地浏览器中完成：API Key 只保存在浏览器 localStorage，请求从浏览器直连你配置的端点，没有后端、没有遥测、没有中转。
 
-## Features
+## 功能
 
-### Protocol Support
-- **OpenAI Chat Completions** (`/v1/chat/completions`) — also works with any OpenAI-compatible endpoint
-- **OpenAI Responses** (`/v1/responses`)
-- **Anthropic Messages** (`/v1/messages`)
-- **Google Generative AI / Gemini** (`streamGenerateContent?alt=sse`)
-- **Ollama Chat** (`/api/chat`) — test local models
-- **Cohere Chat** (`/v2/chat`)
-- Smart base-URL completion: type `http://host:8000` and the full path is completed for you
-- One-click model list fetching where the protocol supports it
+### 协议支持
+- **OpenAI Chat Completions**（`/v1/chat/completions`）——兼容所有 OpenAI 兼容端点
+- **OpenAI Responses**（`/v1/responses`）
+- **Anthropic Messages**（`/v1/messages`）
+- **Google Generative AI / Gemini**（`streamGenerateContent?alt=sse`）
+- **Ollama Chat**（`/api/chat`）——测试本地模型
+- **Cohere Chat**（`/v2/chat`）
+- Base URL 智能补全：只填 `http://host:8000`，完整路径自动补齐
+- 支持的协议可一键拉取模型列表
 
-### Streaming & Real Usage Tokens
-- True SSE streaming with per-token timestamps
-- Real token usage is captured when providers report it (OpenAI `stream_options.include_usage`, Anthropic `message_delta.usage`, Gemini `usageMetadata`); falls back to estimation otherwise
+### 流式与真实 Token 用量
+- 真 SSE 流式，逐 Token 记录时间戳
+- 服务商上报真实用量时自动采集（OpenAI `stream_options.include_usage`、Anthropic `message_delta.usage`、Gemini `usageMetadata`），否则回退估算
 
-### Metrics
-- **TTFT** (time to first token): average / P50 / P90 / P95 / P99
-- **Total latency** (TTLT): average
-- **Output speed** (t/s): average / P50 / P90
-- **TPOT** (ms per output token, excluding the first-token wait)
-- **ITL** (inter-token latency): P90 / max
-- **Input (prefill) speed** (t/s)
-- Token counts, success rate, and error classification (rate limit 429 / auth 401·403 / bad request / timeout / server 5xx / network / cancelled)
+### 性能指标
+- **首字延迟 TTFT**：均值 / P50 / P90 / P95 / P99
+- **总响应时间 TTLT**：均值
+- **输出速度**（t/s）：均值 / P50 / P90
+- **TPOT**（平均每输出 Token 耗时，不含首字等待）
+- **ITL**（相邻 Token 间隔）：P90 / 最大值
+- **输入（prefill）速度**（t/s）
+- Token 统计、成功率、错误分类（429 限流 / 401·403 鉴权 / 400 / 超时 / 5xx 服务端 / 网络 / 已取消）
 
-### Cost Analysis
-- Per-model price configuration (`model=input_price,output_price` in $/1M tokens, e.g. `gpt-4o=2.5,10`)
-- Per-request and total cost, tokens per dollar
+### 成本分析
+- 按模型配置价格（`模型=输入价,输出价`，单位 $/百万 Token，如 `gpt-4o=2.5,10`）
+- 单请求与总成本、每美元 Token 数
 
-### Workflow
-- Multiple targets, each with its own protocol / base URL / API key / models
-- Concurrent requests and configurable test rounds
-- Enable/disable targets with collapsible rows
-- Live tab for the in-flight request; per-request detail dialog afterwards
-- Test history (last 20 runs, stored locally) with model-level summary, per-record delete, re-run and export
-- CSV / JSON export (per-request results and per-model statistics), plus configuration import/export
-- 中文 / English interface, Chinese by default
+### 使用体验
+- 多目标管理，每目标独立协议 / 地址 / Key / 模型
+- 并发请求 + 可配置轮次
+- 目标可禁用并折叠（配置保留，不参与测试）
+- 测试中实时标签页；结束后可在详情弹层查看单请求
+- 历史记录（本地保存最近 20 次，含模型级汇总，支持单条删除 / 重跑 / 导出）
+- CSV / JSON 导出（逐请求结果 + 按模型统计），另支持配置导入导出
+- 中英双语界面，默认中文
 
-## Quick Start
+## 快速开始
 
-No install, no build, no dependencies.
+无需安装、无需构建、零依赖。
 
-**Cross-platform:**
+**跨平台：**
 ```bash
 # Python 3
 python -m http.server 8000
 
-# or Node.js (npx)
+# 或 Node.js (npx)
 npx serve .
 ```
-Then open `http://localhost:8000` (or the port you chose).
+然后打开 `http://localhost:8000`（或你选择的端口）。
 
-> Any static file server works; the app itself only needs a modern browser.
+> 任何静态文件服务器都可以；应用本身只需要一个现代浏览器。
 
-## Configuration
+## 配置说明
 
-1. **Add a target row**: pick a protocol, enter the base URL (auto-completed), API key, and models — one model per line.
-2. **Add more targets** to compare providers or models side by side; disable a target to keep its config but skip it in runs.
-3. **Test parameters**: prompts, rounds, and advanced settings — temperature, top_p, max tokens, system prompt, concurrency.
-4. **Model prices** (optional, for cost analysis): one model per line, `model=input_price,output_price` in $/1M tokens:
+1. **添加目标行**：选择协议、填写 Base URL（自动补全）、API Key、模型（每行一个）。
+2. **添加更多目标**横向对比不同服务商或模型；禁用某目标可保留配置但跳过测试。
+3. **测试参数**：提示词、轮次，以及高级设置——temperature、top_p、最大 Token、系统提示词、并发数。
+4. **模型价格**（可选，用于成本分析）：每行一个模型，`模型=输入价,输出价`，单位 $/百万 Token：
    ```
    gpt-4o=2.5,10
    deepseek-chat=0.27,1.1
    ```
-5. **Run** — watch requests stream live, then read the statistics table and export CSV/JSON.
+5. **开始测试**——实时观看请求流式返回，然后查看统计表并导出 CSV/JSON。
 
-## Metrics Explained
+## 指标说明
 
-| Metric | Meaning | Unit |
-|--------|---------|------|
-| TTFT (First Token) | Time from request sent to first response token | ms |
-| Total Latency | Time from request sent to the full response | ms |
-| Output Speed | Output tokens per second (total tokens / total latency) | t/s |
-| TPOT | Average time per output token, excluding the first-token wait | ms/token |
-| ITL | Interval between consecutive tokens (P90 / max) | ms |
-| Input Speed | Input tokens / TTFT — prefill throughput | t/s |
-| Cost | Computed from configured prices, per request and per model | $ |
-| Success Rate | Successful requests / total requests | % |
+| 指标 | 含义 | 单位 |
+|------|------|------|
+| 首字延迟 TTFT | 从发出请求到收到首个响应 Token 的时间 | ms |
+| 总响应时间 | 从发出请求到完整响应结束的时间 | ms |
+| 输出速度 | 每秒输出 Token 数（总 Token / 总延迟） | t/s |
+| TPOT | 平均每个输出 Token 的耗时（不含首字等待） | ms/token |
+| ITL | 相邻 Token 间隔（P90 / 最大值） | ms |
+| 输入速度 | 输入 Token / 首字延迟——prefill 吞吐 | t/s |
+| 成本 | 按配置价格计算，单请求与按模型汇总 | $ |
+| 成功率 | 成功请求数 / 总请求数 | % |
 
-## Privacy & Security
+## 隐私与安全
 
-- API keys live only in your browser's localStorage — never sent anywhere except the endpoints you configure.
-- Requests go **directly** from your browser to each endpoint. No proxy, no telemetry.
-- Note: some cloud providers block browser cross-origin (CORS) requests. Local endpoints (e.g. Ollama) and CORS-friendly gateways work out of the box; for blocked providers, use a gateway that sends CORS headers or your own relay.
-- Avoid entering real keys on shared machines; clear the browser storage when done.
+- API Key 只存在浏览器 localStorage 中——除你配置的端点外不会发往任何地方。
+- 请求从浏览器**直连**各端点，无代理、无遥测。
+- 注意：部分云服务商会拦截浏览器跨域（CORS）请求。本地端点（如 Ollama）和允许 CORS 的网关开箱即用；被拦截的服务商请使用带 CORS 头的网关或自建中转。
+- 请勿在共用设备上输入真实 Key；用完记得清理浏览器存储。
 
-## Project Structure
+## 项目结构
 
 ```
 llm-speedtest/
-├── index.html          # Single-page UI
-├── app.js              # Test orchestration, statistics, history, export
-├── api-handlers.js     # Protocol implementations (6 providers) & streaming parser
-├── i18n.js             # English / 中文 translations
-├── styles.css          # Styling (light theme)
-└── LICENSE             # MIT
+├── index.html          # 单页应用界面
+├── app.js              # 测试编排、统计、历史、导出
+├── api-handlers.js     # 六种协议实现与流式解析
+├── i18n.js             # 中英文翻译
+├── styles.css          # 样式（浅色主题）
+└── LICENSE             # MIT 许可证
 ```
 
-## Contributing
+## 参与贡献
 
-Issues and pull requests are welcome!
+欢迎提交 Issue 和 Pull Request！
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m "feat: add amazing-feature"`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork 本仓库
+2. 创建功能分支（`git checkout -b feature/amazing-feature`）
+3. 提交修改（`git commit -m "feat: add amazing-feature"`）
+4. 推送分支（`git push origin feature/amazing-feature`）
+5. 发起 Pull Request
 
-## Credits
+## 致谢
 
-This project is based on [llm-api-test](https://github.com/qjr87/llm-api-test) by [qjr87](https://github.com/qjr87). Thank you for the original work.
+本项目基于 [qjr87](https://github.com/qjr87) 的 [llm-api-test](https://github.com/qjr87/llm-api-test) 开发，感谢原作者的工作。
 
-## License
+## 许可证
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+本项目基于 MIT 许可证开源——详见 [LICENSE](LICENSE) 文件。
 
 ---
 
 <div align="center">
 
-**[⭐ Star this repo](https://github.com/dianaloveava/llm-speedtest) if you find it helpful!**
+**觉得有用的话，[给个 Star](https://github.com/dianaloveava/llm-speedtest) 吧！**
 
-Made by [dianaloveava](https://github.com/dianaloveava)
+由 [dianaloveava](https://github.com/dianaloveava) 制作
 
 </div>

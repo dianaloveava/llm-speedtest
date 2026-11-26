@@ -60,17 +60,22 @@ Everything runs locally in your browser: API keys are stored only in your browse
 
 No install, no build, no dependencies.
 
-**Cross-platform:**
+**One command (starts the server and opens your default browser):**
 ```bash
-# Python 3
-python -m http.server 8000
+# Python 3 — standard library only
+python serve.py
 
-# or Node.js (npx)
+# Windows can also just double-click start.bat
+```
+`serve.py` listens on port 8000, stepping to the next free port if it is taken; `--port 8080` picks a port, `--no-open` serves without opening a browser.
+
+**Any static server works too (open the URL yourself):**
+```bash
+python -m http.server 8000
 npx serve .
 ```
-Then open `http://localhost:8000` (or the port you chose).
 
-> Any static file server works; the app itself only needs a modern browser.
+> The app itself only needs a modern browser.
 
 ## Configuration
 
@@ -113,6 +118,8 @@ llm-speedtest/
 ├── api-handlers.js     # Protocol implementations (6 providers) & streaming parser
 ├── i18n.js             # English / 中文 translations
 ├── styles.css          # Styling (light theme)
+├── serve.py            # Local static server that opens your browser
+├── start.bat           # One-click launch on Windows
 └── LICENSE             # MIT
 ```
 

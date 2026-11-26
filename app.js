@@ -463,6 +463,15 @@ class APITester {
         return `${label} @ ${host}${suffix}`;
     }
 
+    // Origin shown in error hints; falls back to the raw text when unparseable.
+    originOf(url) {
+        try {
+            return new URL(url).origin;
+        } catch (_) {
+            return String(url || '').trim() || '-';
+        }
+    }
+
     // ── Prompts ─────────────────────────────────────────────────────────────
     promptRowCount() {
         return document.querySelectorAll('#promptList .prompt-row').length;
@@ -702,7 +711,18 @@ class APITester {
             this.openModelPicker(models, row);
             this.showToast(`${i18n.t('fetchModelsSuccess')} (${models.length})`, 'success');
         } catch (err) {
-            this.showToast(i18n.t('fetchModelsFailed') + ': ' + err.message, 'error');
+            const message = (err && err.message) || String(err);
+            // A network-level failure hides whether the port is dead or CORS
+            // refused the request, so name both origins — localhost and
+            // 127.0.0.1 are different origins and trip people up.
+            let hint = '';
+            if (this.classifyError(message) === 'network') {
+                hint = ' ' + i18n.t('fetchModelsNetworkHint', {
+                    page: window.location.origin,
+                    api: this.originOf(target.apiUrl)
+                });
+            }
+            this.showToast(`${i18n.t('fetchModelsFailed')}: ${message}${hint}`, 'error');
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = i18n.t('fetchModels'); }
         }
@@ -1840,7 +1860,8 @@ class APITester {
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
         region.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
+        // Errors carry actionable hints — give them time to be read.
+        setTimeout(() => toast.remove(), type === 'error' ? 7000 : 3000);
     }
 
     askConfirm(message) {

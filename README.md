@@ -60,17 +60,22 @@ LLM SpeedTest 是一个零依赖、纯浏览器端的大模型 API 基准测试�
 
 无需安装、无需构建、零依赖。
 
-**跨平台：**
+**一条命令（起服务 + 自动打开默认浏览器）：**
 ```bash
-# Python 3
-python -m http.server 8000
+# Python 3 —— 只需标准库
+python serve.py
 
-# 或 Node.js (npx)
+# Windows 也可直接双击 start.bat
+```
+`serve.py` 默认端口 8000，被占用时自动顺延；可用 `--port 8080` 指定、`--no-open` 只起服务不开浏览器。
+
+**任何静态服务器同样可用（需自行打开地址）：**
+```bash
+python -m http.server 8000
 npx serve .
 ```
-然后打开 `http://localhost:8000`（或你选择的端口）。
 
-> 任何静态文件服务器都可以；应用本身只需要一个现代浏览器。
+> 应用本身只需要一个现代浏览器。
 
 ## 配置说明
 
@@ -113,6 +118,8 @@ llm-speedtest/
 ├── api-handlers.js     # 六种协议实现与流式解析
 ├── i18n.js             # 中英文翻译
 ├── styles.css          # 样式（浅色主题）
+├── serve.py            # 本地静态服务器，启动后自动打开浏览器
+├── start.bat           # Windows 一键启动
 └── LICENSE             # MIT 许可证
 ```
 

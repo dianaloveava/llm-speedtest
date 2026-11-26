@@ -1,299 +1,374 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="zh" dir="ltr">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLM SpeedTest - LLM API Benchmark</title>
+    <title>LLM SpeedTest</title>
     <meta name="theme-color" content="#FAFAFA">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='monospace'>⚡</text></svg>">
-    <meta name="description" content="LLM SpeedTest - Compare and analyze AI model performance">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90' font-family='monospace'>⚡</text></svg>">
+    <meta name="description" content="LLM SpeedTest — 对比 OpenAI、Anthropic、Google、Ollama 与 Cohere 接口的首字延迟、吞吐与成本。">
     <meta name="keywords"
         content="AI API, LLM performance, OpenAI, Google Gemini, API testing, language model comparison">
     <meta name="robots" content="index, follow">
     <meta property="og:title" content="LLM SpeedTest">
-    <meta property="og:description" content="Test and compare performance of different AI language model APIs">
+    <meta property="og:description" content="对比不同 AI 语言模型接口的性能表现">
     <meta property="og:type" content="website">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <div id="scrollProgress" aria-hidden="true"></div>
-    <header>
-        <nav>
+    <a class="skip-link" href="#workbench" data-i18n="skipToContent">跳到主内容</a>
+
+    <header class="app-header">
+        <div class="header-inner">
             <h1 data-i18n="title">LLM SpeedTest</h1>
-            <div class="nav-controls">
-                <a href="https://github.com/dianaloveava/llm-speedtest" target="_blank" class="github-btn"
-                    title="View on GitHub">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <div class="header-actions">
+                <button type="button" id="configToggle" class="icon-btn mobile-only" aria-controls="configPanel"
+                    aria-expanded="true" data-i18n-title="settings" data-i18n-aria="settings">⚙</button>
+                <a class="github-link" href="https://github.com/dianaloveava/llm-speedtest" target="_blank"
+                    rel="noopener" data-i18n-title="viewOnGithub">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                        focusable="false">
                         <path
-                            d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z">
+                            d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12">
                         </path>
                     </svg>
-                    GitHub
+                    <span>GitHub</span>
                 </a>
-                <div class="language-selector">
-                    <select id="languageSelect">
-                        <option value="en">English</option>
-                        <option value="zh">中文</option>
-                    </select>
-                </div>
+                <select id="languageSelect" data-i18n-aria="language" aria-label="语言">
+                    <option value="en">English</option>
+                    <option value="zh" selected>中文</option>
+                </select>
             </div>
-        </nav>
+        </div>
     </header>
 
-        <section class="config-section">
-            <h2 data-i18n="configuration">Configuration</h2>
+    <main id="workbench" class="workbench">
+        <aside id="configPanel" class="config-panel">
+            <div class="config-scroll">
+                <section class="panel-block">
+                    <div class="block-head">
+                        <h2 data-i18n="testTargets">测试目标</h2>
+                        <div class="block-actions">
+                            <button type="button" id="importConfigBtn" class="icon-btn" data-i18n-title="importConfig"
+                                data-i18n-aria="importConfig">↧</button>
+                            <button type="button" id="exportConfigBtn" class="icon-btn" data-i18n-title="exportConfig"
+                                data-i18n-aria="exportConfig">↥</button>
+                            <button type="button" id="addTarget" class="btn btn-secondary" data-i18n="addTarget">+
+                                添加目标</button>
+                        </div>
+                    </div>
+                    <input type="file" id="importConfigInput" accept="application/json" hidden>
+                    <div id="targetList" class="target-list"></div>
+                </section>
 
-            <!-- Test targets: each row = protocol + URL + key + models -->
-            <div class="form-group">
-                <div class="targets-header">
-                    <label data-i18n="testTargets">Test Targets</label>
-                    <button type="button" id="addTarget" class="btn btn-secondary add-target-btn" data-i18n="addTarget">+ Add Target</button>
+                <section class="panel-block">
+                    <div class="block-head">
+                        <h2 data-i18n="prompts">提示词</h2>
+                        <button type="button" id="restorePromptsBtn" class="btn btn-ghost"
+                            data-i18n="restorePrompts">恢复默认</button>
+                    </div>
+                    <div id="promptList" class="prompt-list"></div>
+                    <button type="button" id="addPrompt" class="btn btn-ghost" data-i18n="addPrompt">+ 添加提示词</button>
+                </section>
+
+                <section class="panel-block">
+                    <div class="field-grid">
+                        <label class="field">
+                            <span data-i18n="rounds">测试轮数</span>
+                            <input type="number" id="rounds" min="1" max="10" value="1">
+                        </label>
+                        <label class="field">
+                            <span data-i18n="concurrency">并发数</span>
+                            <input type="number" id="concurrency" min="1" max="10" value="1">
+                        </label>
+                    </div>
+                    <details id="advancedSettings" class="advanced-settings">
+                        <summary data-i18n="advancedSettings">高级设置</summary>
+                        <div class="advanced-grid">
+                            <label class="field">
+                                <span data-i18n="maxTokens">最大 Tokens</span>
+                                <input type="number" id="maxTokens" min="1" max="32000" value="1000">
+                            </label>
+                            <label class="field">
+                                <span data-i18n="temperature">温度</span>
+                                <input type="number" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                            </label>
+                            <label class="field">
+                                <span data-i18n="topP">Top P</span>
+                                <input type="number" id="topP" min="0" max="1" step="0.01" value="1">
+                            </label>
+                            <label class="field" data-i18n-title="timeoutHint">
+                                <span data-i18n="timeout">超时 (秒)</span>
+                                <input type="number" id="timeoutSec" min="5" max="600" value="120">
+                            </label>
+                            <label class="field span-full">
+                                <span data-i18n="systemPrompt">系统提示词</span>
+                                <textarea id="systemPrompt" rows="2" data-i18n-ph="systemPromptPh"></textarea>
+                            </label>
+                            <label class="field span-full">
+                                <span data-i18n="modelPrices">模型价格 ($ / 百万 token)</span>
+                                <textarea id="modelPrices" rows="3" data-i18n-ph="modelPricesPh"></textarea>
+                                <small class="hint" data-i18n="modelPricesPh"></small>
+                            </label>
+                        </div>
+                    </details>
+                </section>
+            </div>
+
+            <div class="run-bar">
+                <div class="run-progress">
+                    <div class="run-progress-track">
+                        <div id="runProgressBar" class="run-progress-fill"></div>
+                    </div>
+                    <span id="runProgressText" class="run-progress-text">0 / 0</span>
                 </div>
-                <div id="targetList" class="target-list">
-                    <!-- Target rows inserted dynamically by app.js -->
+                <button id="startTest" class="btn btn-primary" data-i18n="startTest">开始测试</button>
+                <button id="stopTest" class="btn btn-danger hidden" data-i18n="stopTest">停止</button>
+            </div>
+        </aside>
+
+        <section class="result-panel">
+            <nav class="tabs" role="tablist">
+                <button type="button" class="tab-btn" role="tab" data-tab="live" aria-selected="false"
+                    aria-controls="tab-live" data-i18n="tabLive">实时</button>
+                <button type="button" class="tab-btn" role="tab" data-tab="results" aria-selected="true"
+                    aria-controls="tab-results" data-i18n="tabResults">结果</button>
+                <button type="button" class="tab-btn" role="tab" data-tab="statistics" aria-selected="false"
+                    aria-controls="tab-statistics" data-i18n="tabStatistics">统计</button>
+                <button type="button" class="tab-btn" role="tab" data-tab="history" aria-selected="false"
+                    aria-controls="tab-history" data-i18n="tabHistory">历史</button>
+            </nav>
+
+            <!-- 实时 -->
+            <div id="tab-live" class="tab-panel" role="tabpanel" hidden>
+                <p id="livePlaceholder" class="empty-state" data-i18n="emptyLive">当前没有进行中的请求。开始测试即可查看流式输出。</p>
+                <div id="liveContent" class="live-content hidden">
+                    <div class="live-meta">
+                        <span id="liveModel" class="live-model">-</span>
+                        <span id="liveRound" class="live-round">-</span>
+                        <span id="liveStatus" class="badge badge-neutral">-</span>
+                    </div>
+                    <div class="live-field">
+                        <span class="detail-label" data-i18n="prompt">提示词</span>
+                        <div id="livePrompt" class="detail-text"></div>
+                    </div>
+                    <div class="live-field">
+                        <span class="detail-label" data-i18n="liveResponse">流式输出</span>
+                        <div id="liveResult" class="detail-text live-result"></div>
+                    </div>
+                    <div class="live-stats">
+                        <div class="stat-item">
+                            <span class="stat-label" data-i18n="firstTokenTime">首字响应 (ms)</span>
+                            <span class="stat-value" id="liveFirstToken">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label" data-i18n="outputSpeed">输出速度 (t/s)</span>
+                            <span class="stat-value" id="liveSpeed">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label" data-i18n="tokens">令牌数</span>
+                            <span class="stat-value" id="liveTokens">-</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <!-- Model picker panel (shared across all targets) -->
-            <div id="modelPicker" class="model-picker hidden">
-                <div class="model-picker-header">
-                    <input type="text" id="modelPickerSearch" class="model-picker-search" placeholder="Search models...">
-                    <button type="button" id="closeModelPicker" class="close-btn" title="Close">×</button>
+
+            <!-- 结果 -->
+            <div id="tab-results" class="tab-panel" role="tabpanel">
+                <div class="toolbar">
+                    <input type="search" id="resultSearch" class="toolbar-search" data-i18n-ph="searchResults"
+                        placeholder="搜索结果...">
+                    <select id="statusFilter" class="toolbar-select" data-i18n-aria="status">
+                        <option value="all" data-i18n="statusAll">全部状态</option>
+                        <option value="completed" data-i18n="statusCompleted">完成</option>
+                        <option value="failed" data-i18n="statusFailed">失败</option>
+                        <option value="cancelled" data-i18n="statusCancelled">已取消</option>
+                    </select>
+                    <button type="button" id="retryFailedBtn" class="btn btn-secondary"
+                        data-i18n="retryFailed">重跑失败项</button>
+                    <button type="button" id="clearResultsBtn" class="btn btn-secondary"
+                        data-i18n="clearResults">清空结果</button>
+                    <button type="button" id="exportCsv" class="btn btn-ghost" data-i18n="exportCsv">导出 CSV</button>
+                    <button type="button" id="exportJson" class="btn btn-ghost" data-i18n="exportJson">导出 JSON</button>
                 </div>
-                <div class="model-picker-actions">
-                    <button type="button" id="selectAllModels" class="btn btn-secondary" data-i18n="selectAll">Select All</button>
-                    <button type="button" id="deselectAllModels" class="btn btn-secondary" data-i18n="deselectAll">Deselect All</button>
+                <div class="table-scroll">
+                    <table id="resultsTable">
+                        <caption class="visually-hidden" data-i18n="results">结果</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col" data-sort="model" data-i18n="model">模型</th>
+                                <th scope="col" data-sort="target" data-i18n="target">目标</th>
+                                <th scope="col" data-sort="prompt" data-i18n="prompt">提示词</th>
+                                <th scope="col" data-sort="round" data-i18n="round">轮次</th>
+                                <th scope="col" data-sort="firstToken" data-i18n="firstTokenTime">首字响应 (ms)</th>
+                                <th scope="col" data-sort="speed" data-i18n="outputSpeed">输出速度 (t/s)</th>
+                                <th scope="col" data-i18n="result">结果</th>
+                                <th scope="col" data-i18n="error">错误</th>
+                                <th scope="col" data-sort="status" data-i18n="status">状态</th>
+                                <th scope="col" data-i18n="actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
                 </div>
-                <div id="modelPickerList" class="model-picker-list"></div>
-                <div class="model-picker-footer">
-                    <button type="button" id="useSelectedModels" class="btn btn-primary" data-i18n="useSelectedModels">Use Selected Models</button>
-                </div>
+                <p id="resultsEmpty" class="empty-state" data-i18n="emptyResults">
+                    还没有结果。配置一个目标后点击开始测试。</p>
             </div>
 
-            <div class="form-group">
-                <label for="prompts" data-i18n="prompts">Custom Prompts (one per line)</label>
-                <textarea id="prompts" rows="5"
-                    placeholder="Tell me a short story\nExplain quantum physics\nWrite a poem about nature"></textarea>
+            <!-- 统计 -->
+            <div id="tab-statistics" class="tab-panel" role="tabpanel" hidden>
+                <div class="toolbar">
+                    <button type="button" id="exportStatistics" class="btn btn-ghost"
+                        data-i18n="exportStatistics">导出统计</button>
+                </div>
+                <div class="table-scroll">
+                    <table id="statisticsTable">
+                        <caption class="visually-hidden" data-i18n="statistics">统计信息</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col" data-i18n="model">模型</th>
+                                <th scope="col" data-i18n="target">目标</th>
+                                <th scope="col" data-i18n="averageFirstToken">平均首字响应 (ms)</th>
+                                <th scope="col" data-i18n="p50FirstToken">P50 首字响应 (ms)</th>
+                                <th scope="col" data-i18n="p90FirstToken">P90 首字响应 (ms)</th>
+                                <th scope="col" data-i18n="p95FirstToken">P95 首字响应 (ms)</th>
+                                <th scope="col" data-i18n="p99FirstToken">P99 首字响应 (ms)</th>
+                                <th scope="col" data-i18n="totalLatency">平均总响应 (ms)</th>
+                                <th scope="col" data-i18n="averageOutputSpeed">平均输出速度 (t/s)</th>
+                                <th scope="col" data-i18n="p50Speed">P50 速度 (t/s)</th>
+                                <th scope="col" data-i18n="p90Speed">P90 速度 (t/s)</th>
+                                <th scope="col" data-i18n="tpot">平均 TPOT (ms/token)</th>
+                                <th scope="col" data-i18n-title="chunkInterval">
+                                    <span data-i18n="itlP90">ITL P90 (ms)</span>*
+                                </th>
+                                <th scope="col" data-i18n="inputTps">输入速度 (t/s)</th>
+                                <th scope="col" data-i18n="totalTokens">总 Tokens</th>
+                                <th scope="col" data-i18n="avgCost">平均成本 ($)</th>
+                                <th scope="col" data-i18n="successRate">成功率</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statisticsBody"></tbody>
+                    </table>
+                </div>
+                <p id="statisticsEmpty" class="empty-state" data-i18n="emptyStatistics">
+                    测试结束后显示统计数据。</p>
             </div>
 
-            <div class="form-group">
-                <label for="rounds" data-i18n="rounds">Test Rounds</label>
-                <input type="number" id="rounds" min="1" max="10" value="1">
-            </div>
-
-            <!-- Advanced settings (collapsible) -->
-            <details id="advancedSettings" class="advanced-settings">
-                <summary data-i18n="advancedSettings">Advanced Settings</summary>
-                <div class="advanced-grid">
-                    <div class="form-group">
-                        <label for="maxTokens" data-i18n="maxTokens">Max Tokens</label>
-                        <input type="number" id="maxTokens" min="1" max="32000" value="1000">
-                    </div>
-                    <div class="form-group">
-                        <label for="temperature" data-i18n="temperature">Temperature</label>
-                        <input type="number" id="temperature" min="0" max="2" step="0.1" value="0.7">
-                    </div>
-                    <div class="form-group">
-                        <label for="topP" data-i18n="topP">Top P</label>
-                        <input type="number" id="topP" min="0" max="1" step="0.1" value="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="concurrency" data-i18n="concurrency">Concurrency</label>
-                        <input type="number" id="concurrency" min="1" max="10" value="1">
-                    </div>
-                    <div class="form-group span-full">
-                        <label for="modelPrices" data-i18n="modelPrices">Model Prices ($ per 1M tokens)</label>
-                        <textarea id="modelPrices" rows="3" data-i18n-ph="modelPricesPh" placeholder="gpt-4o=2.5,10"></textarea>
-                    </div>
+            <!-- 历史 -->
+            <div id="tab-history" class="tab-panel" role="tabpanel" hidden data-i18n-aria="history">
+                <div class="toolbar">
+                    <button type="button" id="exportHistoryBtn" class="btn btn-ghost"
+                        data-i18n="exportHistory">导出历史</button>
+                    <button type="button" id="clearHistoryBtn" class="btn btn-danger"
+                        data-i18n="clearHistory">清除历史</button>
                 </div>
-                <div class="form-group">
-                    <label for="systemPrompt" data-i18n="systemPrompt">System Prompt</label>
-                    <textarea id="systemPrompt" rows="2" placeholder="You are a helpful assistant."></textarea>
-                </div>
-            </details>
-
-            <div class="button-row">
-                <button id="startTest" data-i18n="startTest">Start Test</button>
-                <button id="stopTest" class="btn btn-danger" data-i18n="stopTest" style="display:none;">Stop</button>
+                <div id="historyList" class="history-list"></div>
             </div>
         </section>
-
-        <section id="dashboardSection" class="dashboard-section" style="display:none;">
-            <div class="dashboard-grid">
-                <div class="dashboard-card"><span class="dash-icon">⚡</span><span class="dash-value" id="dashTotal">0</span><span class="dash-label" data-i18n="totalTests">Total Tests</span></div>
-                <div class="dashboard-card"><span class="dash-icon">✅</span><span class="dash-value" id="dashSuccess">0</span><span class="dash-label" data-i18n="successfulTests">Successful Tests</span></div>
-                <div class="dashboard-card"><span class="dash-icon">❌</span><span class="dash-value" id="dashFailed">0</span><span class="dash-label" data-i18n="failed">Failed</span></div>
-                <div class="dashboard-card"><span class="dash-icon">📊</span><span class="dash-value" id="dashProgress">0%</span><span class="dash-label" data-i18n="progress">Progress</span></div>
-            </div>
-        </section>
-        <section class="results-section">
-            <div class="results-header">
-                <h2 data-i18n="results">Results</h2>
-                <div class="results-actions">
-                    <input type="text" id="resultSearch" class="result-search" data-i18n-ph="searchResults" placeholder="Search results...">
-                    <button id="exportCsv" class="export-btn" data-i18n="exportCsv">Export CSV</button>
-                    <button id="exportJson" class="export-btn" data-i18n="exportJson">Export JSON</button>
-                </div>
-            </div>
-            <div class="table-container">
-                <table id="resultsTable">
-                    <thead>
-                        <tr>
-                            <th data-i18n="model">Model</th>
-                            <th data-i18n="target">Target</th>
-                            <th data-i18n="prompt">Prompt</th>
-                            <th data-i18n="round">Round</th>
-                            <th data-i18n="firstTokenTime">First Token (ms)</th>
-                            <th data-i18n="outputSpeed">Output Speed (t/s)</th>
-                            <th data-i18n="result">Result</th>
-                            <th data-i18n="error">Error</th>
-                            <th data-i18n="status">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultsBody">
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- Statistics Section -->
-        <section id="statisticsSection" class="results-section">
-            <div class="section-header">
-                <h2 data-i18n="statistics">Statistics</h2>
-                <div class="history-controls">
-                    <button id="exportStatistics" class="export-btn" data-i18n="exportStatistics">Export Statistics</button>
-                </div>
-            </div>
-            <div class="statistics-table-container">
-                <table id="statisticsTable">
-                    <thead>
-                        <tr>
-                            <th data-i18n="model">Model</th>
-                            <th data-i18n="target">Target</th>
-                            <th data-i18n="averageFirstToken">Avg First Token (ms)</th>
-                            <th data-i18n="p50FirstToken">P50 First Token (ms)</th>
-                            <th data-i18n="p90FirstToken">P90 First Token (ms)</th>
-                            <th data-i18n="p95FirstToken">P95 First Token (ms)</th>
-                            <th data-i18n="p99FirstToken">P99 First Token (ms)</th>
-                            <th data-i18n="totalLatency">Avg Total Latency (ms)</th>
-                            <th data-i18n="averageOutputSpeed">Avg Output Speed (t/s)</th>
-                            <th data-i18n="p50Speed">P50 Speed (t/s)</th>
-                            <th data-i18n="p90Speed">P90 Speed (t/s)</th>
-                            <th data-i18n="tpot">Avg TPOT (ms/token)</th>
-                            <th data-i18n="itlP90">ITL P90 (ms)</th>
-                            <th data-i18n="inputTps">Input TPS (t/s)</th>
-                            <th data-i18n="totalTokens">Total Tokens</th>
-                            <th data-i18n="avgCost">Avg Cost ($)</th>
-                            <th data-i18n="successRate">Success Rate</th>
-                        </tr>
-                    </thead>
-                    <tbody id="statisticsBody">
-
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- History Section -->
-        <section id="historySection" class="results-section">
-            <div class="section-header">
-                <h2 data-i18n="history">History Records</h2>
-                <div class="history-controls">
-                    <button id="clearHistoryBtn" class="btn btn-danger" data-i18n="clearHistory">Clear History</button>
-                </div>
-            </div>
-            <div class="history-container">
-                <div id="historyContent">
-
-                </div>
-            </div>
-        </section>
-
-        <!-- Real-time Result Viewer -->
-        <div id="realtimeViewer" class="realtime-viewer viewer-hidden">
-            <div class="viewer-header">
-                <h3 data-i18n="realtimeViewer">Real-time Result Viewer</h3>
-                <button id="closeViewer" class="close-btn">×</button>
-            </div>
-            <div class="viewer-content">
-                <div class="current-test-info">
-                    <div class="test-meta">
-                        <span class="test-model" id="currentModel">-</span>
-                        <span class="test-separator">|</span>
-                        <span class="test-round" id="currentRound">Round 1</span>
-                        <span class="test-separator">|</span>
-                        <span class="test-status testing" id="currentStatus">Testing</span>
-                    </div>
-                    <div class="test-prompt" id="currentPrompt"><span class="prompt-char">&gt;</span> </div>
-                </div>
-                <div class="result-display">
-                    <div class="result-text" id="realtimeResult"></div>
-                    <div class="result-cursor"></div>
-                </div>
-                <div class="viewer-stats">
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="firstTokenTime">First Token (ms)</span>
-                        <span class="stat-value" id="viewerFirstToken">0ms</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="outputSpeed">Output Speed (t/s)</span>
-                        <span class="stat-value" id="viewerSpeed">0 t/s</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="tokens">Tokens</span>
-                        <span class="stat-value" id="viewerTokens">0</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Result Detail Viewer -->
-        <div id="resultDetailViewer" class="realtime-viewer viewer-hidden">
-            <div class="viewer-header">
-                <h3 data-i18n="resultDetailViewer">Test Result Detail</h3>
-                <button id="closeDetailViewer" class="close-btn">×</button>
-            </div>
-            <div class="viewer-content">
-                <div class="current-test-info">
-                    <div class="test-meta">
-                        <span class="test-model" id="detailModel">-</span>
-                        <span class="test-separator">|</span>
-                        <span class="test-round" id="detailRound">Round -</span>
-                        <span class="test-separator">|</span>
-                        <span class="test-status" id="detailStatus">-</span>
-                    </div>
-                    <div class="test-prompt" id="detailPrompt"><span class="prompt-char">&gt;</span> -</div>
-                </div>
-                <div class="result-display">
-                    <div class="result-text" id="detailResult"></div>
-                </div>
-                <div class="viewer-stats">
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="firstTokenTime">First Token (ms)</span>
-                        <span class="stat-value" id="detailFirstToken">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="outputSpeed">Output Speed (t/s)</span>
-                        <span class="stat-value" id="detailSpeed">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label" data-i18n="tokens">Tokens</span>
-                        <span class="stat-value" id="detailTokens">-</span>
-                    </div>
-                </div>
-            </div>
-        </div>
     </main>
 
-    <footer>
-        <p data-i18n="footer">LLM SpeedTest - Compare and analyze AI model performance</p>
+    <footer class="app-footer">
+        <p data-i18n="footer">LLM SpeedTest - 比较和分析 AI 模型性能</p>
     </footer>
+
+    <!-- 模型选择弹层 -->
+    <dialog id="modelPickerDialog" class="dialog" aria-labelledby="modelPickerTitle">
+        <div class="dialog-head">
+            <h2 id="modelPickerTitle" data-i18n="modelPickerTitle">选择模型</h2>
+            <form method="dialog">
+                <button class="icon-btn" data-i18n-title="close" data-i18n-aria="close">✕</button>
+            </form>
+        </div>
+        <div class="dialog-body">
+            <input type="search" id="modelPickerSearch" class="toolbar-search" data-i18n-ph="modelPickerSearch"
+                placeholder="搜索模型...">
+            <div class="dialog-actions">
+                <button type="button" id="selectAllModels" class="btn btn-secondary" data-i18n="selectAll">全选</button>
+                <button type="button" id="deselectAllModels" class="btn btn-secondary"
+                    data-i18n="deselectAll">取消全选</button>
+            </div>
+            <div id="modelPickerList" class="model-picker-list"></div>
+        </div>
+        <div class="dialog-foot">
+            <button type="button" id="useSelectedModels" class="btn btn-primary"
+                data-i18n="useSelectedModels">使用选中模型</button>
+        </div>
+    </dialog>
+
+    <!-- 结果详情弹层 -->
+    <dialog id="detailDialog" class="dialog dialog-wide" aria-labelledby="detailTitle">
+        <div class="dialog-head">
+            <h2 id="detailTitle" data-i18n="detailTitle">测试结果</h2>
+            <form method="dialog">
+                <button class="icon-btn" data-i18n-title="close" data-i18n-aria="close">✕</button>
+            </form>
+        </div>
+        <div class="dialog-body">
+            <div class="detail-grid">
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="model">模型</span>
+                    <span id="detailModel" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="round">轮次</span>
+                    <span id="detailRound" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="status">状态</span>
+                    <span id="detailStatus" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="firstTokenTime">首字响应 (ms)</span>
+                    <span id="detailFirstToken" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="outputSpeed">输出速度 (t/s)</span>
+                    <span id="detailSpeed" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-i18n="tokens">令牌数</span>
+                    <span id="detailTokens" class="detail-value">-</span>
+                </div>
+            </div>
+            <div class="detail-field span-full">
+                <span class="detail-label" data-i18n="prompt">提示词</span>
+                <div id="detailPrompt" class="detail-text"></div>
+            </div>
+            <div class="detail-field span-full">
+                <span class="detail-label" data-i18n="liveResponse">流式输出</span>
+                <div id="detailResult" class="detail-text"></div>
+            </div>
+            <p id="detailError" class="detail-error hidden"></p>
+        </div>
+        <div class="dialog-foot">
+            <form method="dialog">
+                <button class="btn btn-secondary" data-i18n="close">关闭</button>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- 确认弹层 -->
+    <dialog id="confirmDialog" class="dialog" aria-labelledby="confirmTitle">
+        <div class="dialog-head">
+            <h2 id="confirmTitle" data-i18n="confirmTitle">请确认</h2>
+        </div>
+        <div class="dialog-body">
+            <p id="confirmMessage"></p>
+        </div>
+        <div class="dialog-foot">
+            <button type="button" id="confirmCancel" class="btn btn-secondary" data-i18n="cancel">取消</button>
+            <button type="button" id="confirmOk" class="btn btn-danger" data-i18n="confirm">确认</button>
+        </div>
+    </dialog>
+
+    <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
     <script src="i18n.js"></script>
     <script src="api-handlers.js"></script>
     <script src="app.js"></script>
-
 </body>
 
 </html>

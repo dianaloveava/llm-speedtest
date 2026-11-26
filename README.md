@@ -51,10 +51,10 @@ Everything runs locally in your browser: API keys are stored only in your browse
 - Multiple targets, each with its own protocol / base URL / API key / models
 - Concurrent requests and configurable test rounds
 - Enable/disable targets with collapsible rows
-- Real-time viewer during the run; per-request detail viewer afterwards
-- Test history (last 5 runs, stored locally) with model-level summary
-- CSV / JSON export (per-request results and per-model statistics)
-- English / 中文 interface
+- Live tab for the in-flight request; per-request detail dialog afterwards
+- Test history (last 20 runs, stored locally) with model-level summary, per-record delete, re-run and export
+- CSV / JSON export (per-request results and per-model statistics), plus configuration import/export
+- 中文 / English interface, Chinese by default
 
 ## Quick Start
 

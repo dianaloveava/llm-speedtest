@@ -1,7 +1,36 @@
 // API handlers for different AI provider protocols — protocol registry architecture.
 // Each PROTOCOL is a declarative spec describing its wire format, auth, endpoint paths,
 // request-body builder, and stream extractors. One generic APIHandler drives all behavior.
-// PROVIDERS map vendor presets → protocol + defaultBaseUrl (presets share a protocol spec).
+
+// ── Token estimation (single implementation, module scope) ─────────────────
+// CJK characters ≈ 1 token each, everything else ≈ 0.25 token per character.
+// Rounding happens once at the end so per-delta rounding cannot inflate the total.
+function estimateRawTokens(text) {
+    if (!text) return 0;
+    let tokens = 0;
+    for (const char of text) {
+        const code = char.codePointAt(0);
+        if ((code >= 0x4E00 && code <= 0x9FFF) ||   // CJK Unified Ideographs
+            (code >= 0x3000 && code <= 0x30FF) ||   // CJK punctuation, hiragana, katakana
+            (code >= 0xAC00 && code <= 0xD7AF)) {  // Korean Hangul syllables
+            tokens += 1;
+        } else {
+            tokens += 0.25;
+        }
+    }
+    return tokens;
+}
+
+function estimateTokens(text) {
+    return Math.ceil(estimateRawTokens(text));
+}
+
+// Reasoning models (o1/o3/…, gpt-5*) reject temperature/top_p and use
+// max_completion_tokens / max_output_tokens instead of max_tokens.
+const REASONING_MODEL_RE = /(^|[\/:-])(o[1-9]\d*|gpt-5[\w.-]*)/i;
+function isReasoningModel(model) {
+    return REASONING_MODEL_RE.test(String(model || ''));
+}
 
 const PROTOCOLS = {
     // ── 1. OpenAI Chat Completions ─────────────────────────────────────────
@@ -18,22 +47,28 @@ const PROTOCOLS = {
         modelsArrayKey: 'data',
         modelsIdField: 'id',
         modelsIdTransform: null,
-        validFinishReasons: ['stop', 'length'],
+        validFinishReasons: ['stop', 'length', 'content_filter', 'tool_calls', 'function_call'],
+        limits: { temperature: 2, topP: 1 },
         buildBody(model, prompt, opts) {
             const messages = [];
             if (opts.systemPrompt && opts.systemPrompt.trim()) {
                 messages.push({ role: 'system', content: opts.systemPrompt });
             }
             messages.push({ role: 'user', content: prompt });
-            return {
+            const body = {
                 model,
                 messages,
                 stream: true,
-                stream_options: { include_usage: true },
-                max_tokens: opts.maxTokens,
-                temperature: opts.temperature,
-                top_p: opts.topP
+                stream_options: { include_usage: true }
             };
+            if (isReasoningModel(model)) {
+                body.max_completion_tokens = opts.maxTokens;
+            } else {
+                body.max_tokens = opts.maxTokens;
+                body.temperature = opts.temperature;
+                body.top_p = opts.topP;
+            }
+            return body;
         },
         extractDelta(json) {
             return json.choices?.[0]?.delta?.content || '';
@@ -41,7 +76,7 @@ const PROTOCOLS = {
         extractFinishReason(json) {
             return json.choices?.[0]?.finish_reason || null;
         },
-        extractDone(json) {
+        extractDone() {
             return false;
         },
         extractUsage(json) {
@@ -64,31 +99,25 @@ const PROTOCOLS = {
         modelsArrayKey: 'data',
         modelsIdField: 'id',
         modelsIdTransform: null,
-        validFinishReasons: null,  // response.completed event signals completion
+        validFinishReasons: null,   // completion is signalled by response.* events
+        limits: { temperature: 2, topP: 1 },
         buildBody(model, prompt, opts) {
             const input = [];
             if (opts.systemPrompt && opts.systemPrompt.trim()) {
                 input.push({ role: 'system', content: opts.systemPrompt });
             }
             input.push({ role: 'user', content: prompt });
-            return {
-                model,
-                input,
-                stream: true,
-                max_output_tokens: opts.maxTokens,
-                temperature: opts.temperature,
-                top_p: opts.topP
-            };
+            const body = { model, input, stream: true, max_output_tokens: opts.maxTokens };
+            if (!isReasoningModel(model)) {
+                body.temperature = opts.temperature;
+                body.top_p = opts.topP;
+            }
+            return body;
         },
         extractDelta(json) {
-            // Text deltas come as response.output_text.delta events
-            if (json.type === 'response.output_text.delta') {
-                return json.delta || '';
-            }
-            return '';
+            return json.type === 'response.output_text.delta' ? (json.delta || '') : '';
         },
         extractFinishReason(json) {
-            // response.completed / response.failed / response.incomplete
             if (json.type === 'response.completed') return 'completed';
             if (json.type === 'response.failed') return 'failed';
             if (json.type === 'response.incomplete') return 'incomplete';
@@ -97,6 +126,12 @@ const PROTOCOLS = {
         extractDone(json) {
             return json.type === 'response.completed' || json.type === 'response.failed' ||
                    json.type === 'response.incomplete';
+        },
+        // Returns a failure message (truthy) or null.
+        doneIsFailure(json) {
+            if (json.type === 'response.failed') return 'Response failed';
+            if (json.type === 'response.incomplete') return 'Response incomplete';
+            return null;
         },
         extractUsage(json) {
             const u = json.response?.usage;
@@ -112,13 +147,16 @@ const PROTOCOLS = {
         auth: { type: 'x-api-key' },
         authHeader: 'x-api-key',
         authVersion: '2023-06-01',
+        // Browser origin is not Anthropic's; without this header the preflight fails.
+        extraHeaders: { 'anthropic-dangerous-direct-browser-access': 'true' },
         wire: 'sse',
         chatPath: '/v1/messages',
         modelsPath: '/v1/models',
         modelsArrayKey: 'data',
         modelsIdField: 'id',
         modelsIdTransform: null,
-        validFinishReasons: ['end_turn', 'max_tokens', 'stop_sequence'],
+        validFinishReasons: ['end_turn', 'max_tokens', 'stop_sequence', 'refusal', 'tool_use'],
+        limits: { temperature: 1, topP: 1 },
         buildBody(model, prompt, opts) {
             const body = {
                 model,
@@ -156,20 +194,22 @@ const PROTOCOLS = {
     },
 
     // ── 4. Google Generative AI ────────────────────────────────────────────
-    // POST /v1beta/models/{model}:streamGenerateContent?alt=sse · SSE · candidates[0].content.parts[0].text · query-key
+    // POST /v1beta/models/{model}:streamGenerateContent?alt=sse · SSE
+    // candidates[0].content.parts[0].text · x-goog-api-key header
     'google-generative-ai': {
         id: 'google-generative-ai',
         label: 'Google Generative AI',
-        auth: { type: 'query-key' },
-        authHeader: null,
+        auth: { type: 'header-key' },
+        authHeader: 'x-goog-api-key',
         authVersion: null,
-        wire: 'sse',  // alt=sse → standard SSE data: format
-        chatPath: '/v1beta/models/{model}:streamGenerateContent',  // {model} placeholder
+        wire: 'sse',
+        chatPath: '/v1beta/models/{model}:streamGenerateContent',
         modelsPath: '/v1beta/models',
         modelsArrayKey: 'models',
         modelsIdField: 'name',
-        modelsIdTransform: name => name.replace('models/', ''),
+        modelsIdTransform: name => String(name || '').replace('models/', ''),
         validFinishReasons: ['STOP', 'MAX_TOKENS'],
+        limits: { temperature: 2, topP: 1 },
         buildBody(model, prompt, opts) {
             const body = {
                 contents: [{ parts: [{ text: prompt }] }],
@@ -190,12 +230,17 @@ const PROTOCOLS = {
         extractFinishReason(json) {
             return json.candidates?.[0]?.finishReason || null;
         },
-        extractDone(json) {
+        extractDone() {
             return false;
         },
         extractUsage(json) {
             const u = json.usageMetadata;
-            return u ? { input: u.promptTokenCount ?? null, output: u.candidatesTokenCount ?? null, total: u.totalTokenCount ?? null } : null;
+            return u ? {
+                input: u.promptTokenCount ?? null,
+                output: u.candidatesTokenCount ?? null,
+                total: u.totalTokenCount ?? null,
+                thoughts: u.thoughtsTokenCount ?? null
+            } : null;
         }
     },
 
@@ -213,7 +258,8 @@ const PROTOCOLS = {
         modelsArrayKey: 'models',
         modelsIdField: 'name',
         modelsIdTransform: null,
-        validFinishReasons: null,  // stream done = success
+        validFinishReasons: null,   // the done frame decides; see doneIsFailure
+        limits: { temperature: 2, topP: 1 },
         buildBody(model, prompt, opts) {
             const messages = [];
             if (opts.systemPrompt && opts.systemPrompt.trim()) {
@@ -235,10 +281,14 @@ const PROTOCOLS = {
             return json.message?.content || '';
         },
         extractFinishReason(json) {
-            return json.done ? (json.done_reason || 'stop') : null;
+            return json.done ? (json.done_reason || null) : null;
         },
         extractDone(json) {
             return json.done === true;
+        },
+        doneIsFailure(json) {
+            if (json.done === true && json.done_reason === 'length') return 'Output truncated (length)';
+            return null;
         },
         extractUsage(json) {
             if (!json.done) return null;
@@ -262,7 +312,8 @@ const PROTOCOLS = {
         modelsArrayKey: 'models',
         modelsIdField: 'name',
         modelsIdTransform: null,
-        validFinishReasons: null,
+        validFinishReasons: ['COMPLETE', 'STOP_SEQUENCE'],
+        limits: { temperature: 1, topP: 0.99 },
         buildBody(model, prompt, opts) {
             const messages = [];
             if (opts.systemPrompt && opts.systemPrompt.trim()) {
@@ -282,17 +333,22 @@ const PROTOCOLS = {
             return json.type === 'content-delta' ? (json.delta?.message?.content?.text || '') : '';
         },
         extractFinishReason(json) {
-            return json.type === 'message-end' ? 'complete' : null;
+            return json.delta?.finish_reason ?? json.finish_reason ?? null;
         },
         extractDone(json) {
             return json.type === 'message-end';
         },
         extractUsage(json) {
-            const u = json.usage?.tokens;
-            return u ? { input: u.input_tokens ?? null, output: u.output_tokens ?? null, total: (u.input_tokens != null && u.output_tokens != null) ? u.input_tokens + u.output_tokens : null } : null;
+            // v2 puts usage inside delta.usage.tokens; older payloads use the top level.
+            const u = json.delta?.usage?.tokens || json.usage?.tokens;
+            if (!u) return null;
+            const input = u.input_tokens ?? u.billed_units?.input_tokens ?? null;
+            const output = u.output_tokens ?? u.billed_units?.output_tokens ?? null;
+            return { input, output, total: (input != null && output != null) ? input + output : null };
         }
     }
 };
+
 // ── Protocol default base URLs ────────────────────────────────────────────
 // Each protocol has one canonical default base URL. Users may override with any custom URL.
 const PROTOCOL_DEFAULTS = {
@@ -304,8 +360,11 @@ const PROTOCOL_DEFAULTS = {
     'cohere-chat':              'https://api.cohere.com',
 };
 
+const DEFAULT_LIMITS = { temperature: 2, topP: 1 };
+
 // ── Smart URL completion ───────────────────────────────────────────────────
 // Appends only the missing trailing portion of fullPath that the user hasn't already typed.
+// Query string / fragment of the base URL are preserved, never matched against.
 // Examples (fullPath = "/v1/chat/completions"):
 //   "http://127.0.0.1:18080"          → "http://127.0.0.1:18080/v1/chat/completions"
 //   "http://127.0.0.1:18080/v1"       → "http://127.0.0.1:18080/v1/chat/completions"
@@ -313,22 +372,40 @@ const PROTOCOL_DEFAULTS = {
 //   "http://127.0.0.1:18080/v1/chat/completions" → unchanged
 //   "http://127.0.0.1:18080/v1/"      → strip trailing slash first, then complete
 function smartCompleteUrl(baseUrl, fullPath) {
-    let base = (baseUrl || '').trim();
-    while (base.endsWith('/')) base = base.slice(0, -1);
-    // If base already ends with fullPath → no completion needed
-    if (base.endsWith(fullPath)) return base;
-    // Find the longest prefix of fullPath that is a suffix of base, then append the rest.
-    // Iterate from longest to shortest prefix for maximum reuse.
-    for (let i = fullPath.length - 1; i >= 1; i--) {
-        const candidate = fullPath.slice(0, i);
-        // candidate always starts with '/' (fullPath does), so endsWith is sufficient
-        // — the leading '/' ensures we match at a path-segment boundary.
-        if (candidate && base.endsWith(candidate)) {
-            return base + fullPath.slice(i);
+    const raw = (baseUrl || '').trim();
+    let base = raw;
+    let suffix = '';
+
+    try {
+        const u = new URL(raw);
+        base = u.origin + u.pathname;
+        suffix = u.search + u.hash;
+    } catch (_) {
+        // Not an absolute URL — strip query/hash textually instead.
+        const hashIdx = raw.indexOf('#');
+        if (hashIdx >= 0) {
+            suffix = raw.slice(hashIdx);
+            base = raw.slice(0, hashIdx);
+        }
+        const qIdx = base.indexOf('?');
+        if (qIdx >= 0) {
+            suffix = base.slice(qIdx) + suffix;
+            base = base.slice(0, qIdx);
         }
     }
-    // No overlap — append full path
-    return base + fullPath;
+
+    while (base.endsWith('/')) base = base.slice(0, -1);
+    if (!fullPath) return base + suffix;
+
+    const path = fullPath.startsWith('/') ? fullPath : '/' + fullPath;
+    if (base.endsWith(path)) return base + suffix;
+    // Longest prefix of the path that the base already ends with wins.
+    for (let i = path.length - 1; i >= 1; i--) {
+        const candidate = path.slice(0, i);
+        // candidate always starts with '/', so the match lands on a segment boundary.
+        if (base.endsWith(candidate)) return base + path.slice(i) + suffix;
+    }
+    return base + path + suffix;
 }
 
 // Collapse verbose/HTML error bodies (e.g. CDN 5xx pages) into a short readable message
@@ -340,6 +417,21 @@ function sanitizeErrorBody(text) {
         return m ? m[1].trim() : '(HTML error page omitted)';
     }
     return t.replace(/\s+/g, ' ').slice(0, 200);
+}
+
+function sleepAbortable(ms, signal) {
+    return new Promise(resolve => {
+        if (signal && signal.aborted) { resolve(); return; }
+        const timer = setTimeout(() => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        function onAbort() {
+            clearTimeout(timer);
+            resolve();
+        }
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
 }
 
 class APIHandler {
@@ -354,6 +446,9 @@ class APIHandler {
             topP: options.topP ?? 1,
             systemPrompt: options.systemPrompt ?? ''
         };
+        this.timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+            ? options.timeoutMs
+            : 120000;
     }
 
     getChatPath() {
@@ -364,42 +459,59 @@ class APIHandler {
         return this.spec.modelsPath;
     }
 
-    // Build the chat request { url, headers, body } for a model+prompt
-    buildChatRequest(model, prompt) {
-        const spec = this.spec;
-        const chatPath = this.getChatPath();
-        let url;
-        if (spec.id === 'google-generative-ai') {
-            // Google: embed model + key + alt=sse into the URL path/query
-            const pathWithModel = chatPath.replace('{model}', encodeURIComponent(model));
-            url = smartCompleteUrl(this.baseUrl, pathWithModel) + `?key=${encodeURIComponent(this.apiKey)}&alt=sse`;
-        } else {
-            url = smartCompleteUrl(this.baseUrl, chatPath);
+    // Internal AbortController that fires on user abort or timeout.
+    buildSignal(userSignal) {
+        const controller = new AbortController();
+        const onUserAbort = () => controller.abort('user');
+        if (userSignal) {
+            if (userSignal.aborted) controller.abort('user');
+            else userSignal.addEventListener('abort', onUserAbort, { once: true });
         }
+        const timer = setTimeout(() => controller.abort('timeout'), this.timeoutMs);
+        const cleanup = () => {
+            clearTimeout(timer);
+            if (userSignal) userSignal.removeEventListener('abort', onUserAbort);
+        };
+        return { signal: controller.signal, cleanup };
+    }
 
-        const headers = { 'Content-Type': 'application/json' };
-
+    buildHeaders(extra) {
+        const spec = this.spec;
+        const headers = Object.assign({ 'Content-Type': 'application/json' }, extra || {});
         switch (spec.auth.type) {
             case 'bearer':
                 headers['Authorization'] = `Bearer ${this.apiKey}`;
                 break;
             case 'x-api-key':
                 headers[spec.authHeader] = this.apiKey;
-                if (spec.authVersion) {
-                    headers['anthropic-version'] = spec.authVersion;
-                }
+                if (spec.authVersion) headers['anthropic-version'] = spec.authVersion;
                 break;
-            case 'query-key':
-                // key is in URL (handled above for google)
+            case 'header-key':
+                headers[spec.authHeader] = this.apiKey;
                 break;
             case 'none':
                 // Ollama: no auth by default, but support Bearer for remote instances
-                if (this.apiKey && this.apiKey.trim()) {
-                    headers['Authorization'] = `Bearer ${this.apiKey}`;
-                }
+                if (this.apiKey && this.apiKey.trim()) headers['Authorization'] = `Bearer ${this.apiKey}`;
                 break;
         }
+        if (spec.extraHeaders) Object.assign(headers, spec.extraHeaders);
+        return headers;
+    }
 
+    // Build the chat request { url, headers, body } for a model+prompt
+    buildChatRequest(model, prompt) {
+        const spec = this.spec;
+        const chatPath = this.getChatPath();
+        let url;
+        if (spec.id === 'google-generative-ai') {
+            // Keep path separators inside the model id; the key travels in a header.
+            const encodedModel = String(model).split('/').map(encodeURIComponent).join('/');
+            url = smartCompleteUrl(this.baseUrl, chatPath.replace('{model}', encodedModel)) + '?alt=sse';
+        } else {
+            url = smartCompleteUrl(this.baseUrl, chatPath);
+        }
+
+        const headers = this.buildHeaders({ 'Accept': 'text/event-stream' });
         const body = spec.buildBody(model, prompt, this.options);
         return { url, headers, body };
     }
@@ -410,33 +522,17 @@ class APIHandler {
         const modelsPath = this.getModelsPath();
         let url;
         if (spec.id === 'google-generative-ai') {
-            url = smartCompleteUrl(this.baseUrl, modelsPath) + `?key=${encodeURIComponent(this.apiKey)}`;
+            url = smartCompleteUrl(this.baseUrl, modelsPath) + '?pageSize=1000';
         } else {
             url = smartCompleteUrl(this.baseUrl, modelsPath);
         }
+        const headers = this.buildHeaders();
 
-        const headers = { 'Content-Type': 'application/json' };
-        switch (spec.auth.type) {
-            case 'bearer':
-                headers['Authorization'] = `Bearer ${this.apiKey}`;
-                break;
-            case 'x-api-key':
-                headers[spec.authHeader] = this.apiKey;
-                if (spec.authVersion) {
-                    headers['anthropic-version'] = spec.authVersion;
-                }
-                break;
-            case 'none':
-                if (this.apiKey && this.apiKey.trim()) {
-                    headers['Authorization'] = `Bearer ${this.apiKey}`;
-                }
-                break;
-        }
-
-        // GET is idempotent — retry transient failures (network errors / 5xx,
-        // e.g. an origin hiccup behind a CDN) up to 3 times with backoff.
+        // GET is idempotent — retry transient failures (network errors / 5xx)
+        // up to 3 times with backoff. Waits are abort-aware.
         const MAX_ATTEMPTS = 3;
-        let response = null, fetchErr = null;
+        let response = null;
+        let fetchErr = null;
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             if (signal && signal.aborted) break;
             fetchErr = null;
@@ -444,17 +540,24 @@ class APIHandler {
                 response = await fetch(url, { method: 'GET', headers, signal });
                 if (!response.ok && response.status < 500) break;   // 4xx fails fast
             } catch (err) {
+                if (signal && signal.aborted) throw new Error('Cancelled by user');
+                if (err && err.name === 'AbortError') throw new Error('Cancelled by user');
+                response = null;
                 fetchErr = err;
             }
             if ((fetchErr || (response && response.status >= 500)) && attempt < MAX_ATTEMPTS) {
-                await new Promise(r => setTimeout(r, 800 * attempt));
+                if (response && response.body) {
+                    try { await response.body.cancel(); } catch (_) { /* already consumed */ }
+                }
+                await sleepAbortable(800 * attempt, signal);
             }
         }
-        if (fetchErr) throw fetchErr;
-        if (!response || !response.ok) {
-            const status = response ? response.status : 599;
-            const errorData = response ? await response.text() : '';
-            throw new Error(`HTTP ${status}: ${sanitizeErrorBody(errorData)}`);
+
+        if (fetchErr) throw new Error('Network error: ' + fetchErr.message);
+        if (!response) throw new Error('Network error: no response');
+        if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`HTTP ${response.status}: ${sanitizeErrorBody(errorData)}`);
         }
 
         const json = await response.json();
@@ -468,203 +571,307 @@ class APIHandler {
     // Test a single model → result object
     async testModel(model, prompt, onProgress, signal) {
         const startTime = Date.now();
+        const { signal: ctlSignal, cleanup } = this.buildSignal(signal);
+
+        const abortResult = () => {
+            const timeout = ctlSignal.reason === 'timeout';
+            return {
+                firstTokenTime: null,
+                outputSpeed: '0.00',
+                totalTokens: 0,
+                totalLatency: Date.now() - startTime,
+                usage: null,
+                tokenTimes: [],
+                finishReason: null,
+                result: '',
+                error: timeout ? `Timeout after ${this.timeoutMs / 1000}s` : 'Cancelled by user',
+                status: timeout ? 'failed' : 'cancelled',
+                aborted: true
+            };
+        };
+
         try {
-            const { url, headers, body } = this.buildChatRequest(model, prompt);
-            const response = await fetch(url, {
+            const built = this.buildChatRequest(model, prompt);
+            let response = await fetch(built.url, {
                 method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-                signal
+                headers: built.headers,
+                body: JSON.stringify(built.body),
+                signal: ctlSignal
             });
 
             if (!response.ok) {
                 const errorData = await response.text();
-                throw new Error(`HTTP ${response.status}: ${sanitizeErrorBody(errorData)}`);
+                // Some OpenAI-compatible gateways reject stream_options outright —
+                // retry the same request once without it.
+                if (response.status === 400 && built.body.stream_options && /stream_options/i.test(errorData)) {
+                    const retryBody = Object.assign({}, built.body);
+                    delete retryBody.stream_options;
+                    response = await fetch(built.url, {
+                        method: 'POST',
+                        headers: built.headers,
+                        body: JSON.stringify(retryBody),
+                        signal: ctlSignal
+                    });
+                    if (!response.ok) {
+                        const retryData = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${sanitizeErrorBody(retryData)}`);
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${sanitizeErrorBody(errorData)}`);
+                }
             }
 
-            const streamResult = await this.processStream(response, startTime, onProgress, signal);
+            const streamResult = await this.processStream(response, startTime, onProgress, ctlSignal);
             streamResult.usage = streamResult.usage || null;
-            streamResult.inputTokens = streamResult.usage?.input ?? this.estimateTokens(prompt);
+            streamResult.inputTokens = streamResult.usage?.input ?? estimateTokens(prompt);
             if (streamResult.usage?.output != null) streamResult.totalTokens = streamResult.usage.output;
             return streamResult;
         } catch (err) {
-            if (err.name === 'AbortError') {
-                const errorResult = {
-                    firstTokenTime: null,
-                    outputSpeed: '0.00',
-                    totalTokens: 0,
-                    totalLatency: Date.now() - startTime,
-                    result: '',
-                    error: 'Cancelled',
-                    status: 'failed'
-                };
-                if (onProgress) onProgress(errorResult);
-                return errorResult;
+            if (ctlSignal.aborted || (err && err.name === 'AbortError')) {
+                const result = abortResult();
+                if (onProgress) onProgress(result);
+                return result;
             }
             const errorResult = {
                 firstTokenTime: null,
                 outputSpeed: '0.00',
                 totalTokens: 0,
                 totalLatency: Date.now() - startTime,
+                usage: null,
+                tokenTimes: [],
+                finishReason: null,
                 result: '',
-                error: err.message,
+                error: (err && err.message) || String(err),
                 status: 'failed'
             };
             if (onProgress) onProgress(errorResult);
             return errorResult;
+        } finally {
+            cleanup();
         }
     }
 
-    // Unified stream processor for sse + ndjson
+    // Unified stream processor for sse + ndjson.
+    // Handles \n and \r\n, aggregates multi-line SSE events, flushes the tail
+    // (usage / done frames often arrive last), and always ends in finalizeStream.
     async processStream(response, startTime, onProgress, signal) {
         const spec = this.spec;
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let firstTokenTime = null;
-        let totalTokens = 0;
-        let result = '';
+        const state = {
+            startTime,
+            firstTokenTime: null,
+            estRaw: 0,
+            result: '',
+            finishReason: null,
+            tokenTimes: [],
+            usage: null,
+            badFrames: 0,
+            doneFailure: null,
+            aborted: false,
+            abortReason: null
+        };
+        const markAborted = () => {
+            state.aborted = true;
+            state.abortReason = (signal && signal.reason === 'timeout') ? 'timeout' : 'user';
+        };
+        const eventData = [];
         let buffer = '';
-        let finishReason = null;
-        const tokenTimes = [];   // per-chunk elapsed ms — basis for ITL metrics
-        let usage = null;   // provider-reported token usage, when the stream provides it
+        let finished = false;
+
+        const emitProgress = () => {
+            if (!onProgress) return;
+            const elapsed = Math.max(1, Date.now() - startTime) / 1000;
+            const tokens = Math.ceil(state.estRaw);
+            onProgress({
+                firstTokenTime: state.firstTokenTime,
+                outputSpeed: (tokens / elapsed).toFixed(2),
+                totalTokens: tokens,
+                result: state.result,
+                error: null,
+                status: 'testing'
+            });
+        };
+
+        // Process one raw payload. Returns true when the stream is complete.
+        const dispatch = (raw) => {
+            if (raw === '[DONE]') return true;
+            let parsed;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (_) {
+                state.badFrames++;
+                return false;
+            }
+            if (!parsed || typeof parsed !== 'object') {
+                state.badFrames++;
+                return false;
+            }
+
+            // In-stream error frames → throw so classifyError can bucket them.
+            if (parsed.type === 'error' || (parsed.error && typeof parsed.error === 'object') ||
+                (typeof parsed.error === 'string' && parsed.error.length > 0)) {
+                const e = parsed.error;
+                const msg = (e && typeof e === 'object' ? (e.message || e.code || e.type) : e) || 'Stream error';
+                const status = (e && typeof e === 'object' && (e.status || e.code)) || 500;
+                throw new Error(`HTTP ${status}: ${msg}`);
+            }
+
+            const u = spec.extractUsage ? spec.extractUsage(parsed) : null;
+            if (u) {
+                state.usage = state.usage || {};
+                if (u.input != null) state.usage.input = u.input;
+                if (u.output != null) state.usage.output = u.output;
+                if (u.total != null) state.usage.total = u.total;
+                if (u.thoughts != null) state.usage.thoughts = u.thoughts;
+            }
+
+            const content = spec.extractDelta(parsed);
+            const currentFinish = spec.extractFinishReason(parsed);
+            if (currentFinish) state.finishReason = currentFinish;
+            if (spec.doneIsFailure) {
+                const failure = spec.doneIsFailure(parsed);
+                if (failure) state.doneFailure = failure;
+            }
+
+            if (content) {
+                if (state.firstTokenTime === null) state.firstTokenTime = Date.now() - startTime;
+                state.tokenTimes.push(Date.now() - startTime);
+                state.result += content;
+                state.estRaw += estimateRawTokens(content);
+                emitProgress();
+            }
+
+            return !!spec.extractDone(parsed);
+        };
+
+        // Returns true when the stream is complete.
+        const handleLines = (lines) => {
+            for (const line of lines) {
+                if (spec.wire === 'sse') {
+                    const clean = line.endsWith('\r') ? line.slice(0, -1) : line;
+                    if (clean === '') {
+                        // Blank line terminates the current event.
+                        if (eventData.length) {
+                            const raw = eventData.join('\n');
+                            eventData.length = 0;
+                            if (dispatch(raw)) return true;
+                        }
+                        continue;
+                    }
+                    if (!clean.startsWith('data:')) continue;   // event:/id:/retry:/comments
+                    let payload = clean.slice(5);
+                    if (payload.startsWith(' ')) payload = payload.slice(1);
+                    eventData.push(payload);
+                } else {
+                    const clean = line.endsWith('\r') ? line.slice(0, -1) : line;
+                    if (!clean.trim()) continue;
+                    if (dispatch(clean)) return true;
+                }
+            }
+            return false;
+        };
 
         try {
-            while (true) {
-                if (signal && signal.aborted) break;
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    let raw = line;
-                    if (spec.wire === 'sse') {
-                        // SSE: only parse lines with "data: " prefix
-                        if (!line.startsWith('data: ')) continue;
-                        raw = line.slice(6);
-                        if (raw === '[DONE]') continue;
-                    } else {
-                        // ndjson: skip empty lines
-                        if (!raw.trim()) continue;
-                    }
-
-                    let parsed;
-                    try {
-                        parsed = JSON.parse(raw);
-                    } catch (e) {
-                        continue;  // skip invalid JSON
-                    }
-
-                    const u = spec.extractUsage ? spec.extractUsage(parsed) : null;
-                    if (u) {
-                        usage = usage || {};
-                        if (u.input != null) usage.input = u.input;
-                        if (u.output != null) usage.output = u.output;
-                        if (u.total != null) usage.total = u.total;
-                    }
-                    const content = spec.extractDelta(parsed);
-                    const currentFinish = spec.extractFinishReason(parsed);
-                    if (currentFinish) finishReason = currentFinish;
-
-                    // Some providers signal done via a field (e.g. ollama done:true)
-                    const streamDone = spec.extractDone(parsed);
-
-                    if (content) {
-                        if (firstTokenTime === null) {
-                            firstTokenTime = Date.now() - startTime;
-                        }
-                        tokenTimes.push(Date.now() - startTime);
-                        result += content;
-                        totalTokens += this.estimateTokens(content);
-
-                        const outputSpeed = totalTokens / ((Date.now() - startTime) / 1000);
-                        if (onProgress) {
-                            onProgress({
-                                firstTokenTime,
-                                outputSpeed: outputSpeed.toFixed(2),
-                                totalTokens,
-                                result,
-                                error: null,
-                                status: 'testing'
-                            });
-                        }
-                    }
-
-                    if (streamDone) {
-                        const totalTime = (Date.now() - startTime) / 1000;
-                        const finalOutputSpeed = totalTokens / totalTime;
-                        // Empty response (no content received) = failure
-                        const isEmpty = !result || result.trim().length === 0;
-                        return {
-                            firstTokenTime,
-                            outputSpeed: finalOutputSpeed.toFixed(2),
-                            totalTokens,
-                            totalLatency: Date.now() - startTime,
-                            usage,
-                            tokenTimes,
-                            finishReason,
-                            result,
-                            error: isEmpty ? 'Empty response (no content received)' : null,
-                            status: isEmpty ? 'failed' : 'completed'
-                        };
-                    }
+            while (!finished) {
+                if (signal && signal.aborted) {
+                    markAborted();
+                    break;
                 }
+                let chunk;
+                try {
+                    chunk = await reader.read();
+                } catch (err) {
+                    if ((signal && signal.aborted) || (err && err.name === 'AbortError')) {
+                        markAborted();
+                        break;
+                    }
+                    throw err;
+                }
+                if (chunk.done) {
+                    buffer += decoder.decode();
+                    // The tail has no trailing newline — it is still a complete line.
+                    const tail = buffer;
+                    buffer = '';
+                    if (tail.length && handleLines([tail])) finished = true;
+                    break;
+                }
+                buffer += decoder.decode(chunk.value, { stream: true });
+                const lines = buffer.split(/\r?\n/);
+                buffer = lines.pop() ?? '';
+                if (handleLines(lines)) finished = true;
             }
 
-            const totalTime = (Date.now() - startTime) / 1000;
-            const finalOutputSpeed = totalTokens / totalTime;
-            // Validate finish reason if the spec defines valid ones
-            let isSuccess = true;
-            let error = null;
-            if (spec.validFinishReasons !== null) {
-                isSuccess = spec.validFinishReasons.includes(finishReason);
-                if (!isSuccess) {
-                    error = `Invalid finish_reason: ${finishReason || 'missing'}`;
-                }
+            // Flush a trailing SSE event that never got its blank line.
+            if (!finished && spec.wire === 'sse' && eventData.length) {
+                const raw = eventData.join('\n');
+                eventData.length = 0;
+                try { finished = dispatch(raw); } catch (err) { throw err; }
             }
-            // Empty response (no content received) = failure
-            if (!result || result.trim().length === 0) {
-                isSuccess = false;
-                error = 'Empty response (no content received)';
-            }
-            const status = isSuccess ? 'completed' : 'failed';
-            return {
-                firstTokenTime,
-                outputSpeed: finalOutputSpeed.toFixed(2),
-                totalTokens,
-                totalLatency: Date.now() - startTime,
-                usage,
-                tokenTimes,
-                finishReason,
-                result,
-                error,
-                status
-            };
         } finally {
-            reader.releaseLock();
+            try { reader.cancel().catch(() => { /* already closed */ }); } catch (_) { /* noop */ }
+            try { reader.releaseLock(); } catch (_) { /* noop */ }
         }
+
+        return this.finalizeStream(state, spec);
     }
 
-    // CJK-aware token estimation
-    estimateTokens(text) {
-        if (!text) return 0;
-        let tokens = 0;
-        for (const char of text) {
-            const code = char.codePointAt(0);
-            if ((code >= 0x4E00 && code <= 0x9FFF) ||   // CJK Unified Ideographs
-                (code >= 0x3000 && code <= 0x30FF) ||   // CJK punctuation, hiragana, katakana
-                (code >= 0xAC00 && code <= 0xD7AF)) {  // Korean Hangul syllables
-                tokens += 1;
-            } else {
-                tokens += 0.25;
-            }
+    // Single exit point for every stream path: success, done-frame, abort, timeout.
+    finalizeStream(state, spec) {
+        const elapsed = Math.max(1, Date.now() - state.startTime);
+        const estimated = Math.ceil(state.estRaw);
+        const finalTokens = state.usage?.output != null ? state.usage.output : estimated;
+        const hasResult = !!(state.result && state.result.trim().length > 0);
+        const timeout = state.aborted && state.abortReason === 'timeout';
+
+        let status = 'completed';
+        let error = null;
+
+        if (state.aborted) {
+            status = timeout ? 'failed' : 'cancelled';
+            error = timeout ? `Timeout after ${this.timeoutMs / 1000}s` : 'Cancelled by user';
+        } else if (state.doneFailure) {
+            status = 'failed';
+            error = state.doneFailure;
+        } else if (spec.validFinishReasons !== null &&
+                   !spec.validFinishReasons.includes(state.finishReason)) {
+            status = 'failed';
+            error = `Invalid finish_reason: ${state.finishReason || 'missing'}`;
         }
-        return Math.ceil(tokens);
+
+        // An empty body is always a failure, whatever the provider claimed —
+        // except for a user cancel, which keeps its own status.
+        if (!hasResult && !state.aborted) {
+            status = 'failed';
+            error = state.badFrames > 0
+                ? `Invalid stream payload (${state.badFrames} frames skipped)`
+                : 'Empty response (no content received)';
+        }
+
+        return {
+            firstTokenTime: state.firstTokenTime,
+            outputSpeed: (finalTokens > 0 ? finalTokens / (elapsed / 1000) : 0).toFixed(2),
+            totalTokens: finalTokens,
+            totalLatency: elapsed,
+            usage: state.usage,
+            tokenTimes: state.tokenTimes,
+            finishReason: state.finishReason,
+            result: state.result,
+            error,
+            status,
+            aborted: !!state.aborted
+        };
+    }
+
+    estimateTokens(text) {
+        return estimateTokens(text);
     }
 
     // ── Static helpers ─────────────────────────────────────────────────────
+    static estimateTokens(text) {
+        return estimateTokens(text);
+    }
+
     static smartCompleteUrl(baseUrl, fullPath) {
         return smartCompleteUrl(baseUrl, fullPath);
     }
@@ -672,8 +879,18 @@ class APIHandler {
     static getProtocol(protocol) {
         return PROTOCOLS[protocol] || null;
     }
+
+    static listProtocols() {
+        return Object.keys(PROTOCOLS).map(id => ({ id, label: PROTOCOLS[id].label }));
+    }
+
     static getDefaultBaseUrl(protocol) {
         return PROTOCOL_DEFAULTS[protocol] || '';
+    }
+
+    static getLimits(protocol) {
+        const spec = PROTOCOLS[protocol];
+        return (spec && spec.limits) || DEFAULT_LIMITS;
     }
 
     static getAllDefaultBaseUrls() {
@@ -698,28 +915,15 @@ class APIHandler {
         const errors = [];
         const spec = PROTOCOLS[protocol];
 
-        if (!spec) {
-            errors.push('Unsupported protocol');
-        }
-
-        if (!baseUrl || !this.isValidUrl(baseUrl)) {
-            errors.push('Valid API Base URL is required');
-        }
+        if (!spec) errors.push('Unsupported protocol');
+        if (!baseUrl || !this.isValidUrl(baseUrl)) errors.push('Valid API Base URL is required');
 
         // Ollama with none auth doesn't need a key; others do
-        if (spec && spec.auth.type !== 'none') {
-            if (!apiKey || apiKey.trim().length === 0) {
-                errors.push('API Key is required');
-            }
+        if (spec && spec.auth.type !== 'none' && (!apiKey || apiKey.trim().length === 0)) {
+            errors.push('API Key is required');
         }
-
-        if (!models || models.length === 0) {
-            errors.push('At least one model is required');
-        }
-
-        if (!prompts || prompts.length === 0) {
-            errors.push('At least one prompt is required');
-        }
+        if (!models || models.length === 0) errors.push('At least one model is required');
+        if (!prompts || prompts.length === 0) errors.push('At least one prompt is required');
 
         return errors;
     }

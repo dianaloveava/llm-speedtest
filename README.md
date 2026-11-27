@@ -96,7 +96,7 @@ npm run build   # 产出安装包（Windows .msi/.exe、macOS .dmg、Linux .deb/
 ```
 
 - 首次编译需要 Rust（rustup + MSVC Build Tools）和 WebView2（Win11 自带）。
-- 安装包约 8–12 MB；前端仍是那几个文件，`dist/` 在构建时生成（不入库）。
+- 前端仍是那几个文件，`dist/` 在构建时生成（不入库）；桌面版只是同一个页面的宿主。
 - 跨平台：Windows / macOS / Linux 各自在本机编译（CI 可用三系统矩阵），Linux 需 WebKitGTK 4.1+。
 
 > 若 `cargo` 卡在拉依赖（镜像 403 / 连接被重置），换默认源重试：

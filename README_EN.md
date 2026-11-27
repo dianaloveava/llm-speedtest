@@ -55,6 +55,7 @@ Everything runs locally in your browser: API keys are stored only in your browse
 - Test history (last 20 runs, stored locally) with model-level summary, per-record delete, re-run and export
 - CSV / JSON export (per-request results and per-model statistics), plus configuration import/export
 - 中文 / English interface, Chinese by default
+- Dark / light theme that follows the system by default (overridable in the header); the desktop's native title bar switches with it
 
 ## Quick Start
 

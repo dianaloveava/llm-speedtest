@@ -22,6 +22,10 @@
     --success-bg: rgba(29, 122, 62, 0.10);
     --warning-bg: rgba(178, 80, 0, 0.10);
     --danger-bg: rgba(208, 52, 44, 0.10);
+    --backdrop: rgba(0, 0, 0, 0.35);
+    --scrollbar-thumb: rgba(0, 0, 0, 0.20);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.30);
+    color-scheme: light;
 
     /* Elevation */
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -54,6 +58,40 @@
     --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
     --header-h: 64px;
     accent-color: var(--accent);
+}
+
+/* ── Dark palette ─────────────────────────────────────────────────────────
+   <html data-theme> is written before the first paint by the bootstrap script
+   in index.html: "auto" resolves against prefers-color-scheme, "light"/"dark"
+   override it. Only tokens change here — no component knows its theme. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-page: #0B0B0D;
+    --bg-card: #161618;
+    --bg-subtle: #1F1F22;
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --text: #F5F5F7;
+    --text-secondary: #A1A1A6;
+    --text-tertiary: #98989F;
+    --border: rgba(255, 255, 255, 0.14);
+    --border-strong: rgba(255, 255, 255, 0.50);
+    --accent: #0A84FF;
+    --accent-hover: #409CFF;
+    --accent-subtle: rgba(10, 132, 255, 0.18);
+    --on-accent: #FFFFFF;
+    --success: #30D158;
+    --warning: #FF9F0A;
+    --danger: #FF453A;
+    --success-bg: rgba(48, 209, 88, 0.16);
+    --warning-bg: rgba(255, 159, 10, 0.16);
+    --danger-bg: rgba(255, 69, 58, 0.16);
+    --backdrop: rgba(0, 0, 0, 0.60);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.55);
+    --shadow-raised: 0 2px 10px rgba(0, 0, 0, 0.45);
+    --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.65);
+    --focus-ring: 0 0 0 3px rgba(10, 132, 255, 0.45);
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -89,12 +127,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--scrollbar-thumb);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--scrollbar-thumb-hover);
 }
 
 ::selection {
@@ -1145,7 +1183,7 @@ tbody tr:hover {
 }
 
 .dialog::backdrop {
-    background: rgba(0, 0, 0, 0.35);
+    background: var(--backdrop);
 }
 
 .dialog-head {

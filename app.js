@@ -38,6 +38,7 @@ class APITester {
     }
 
     init() {
+        this.initTheme();
         this.setupEventListeners();
         this.loadSavedConfig();
         if (this.promptRowCount() === 0) this.restorePrompts();
@@ -49,6 +50,51 @@ class APITester {
         this.updateRunControls(false);
         this.updateRunProgress();
         if (typeof i18n !== 'undefined') i18n.onChange(() => this.refreshI18n());
+    }
+
+    // ── Theme ───────────────────────────────────────────────────────────────
+    // 'auto' (the default) follows the system; CSS only ever sees the resolved
+    // value in <html data-theme>. index.html repeats the resolution inline so
+    // the first paint is already correct.
+    initTheme() {
+        const select = document.getElementById('themeSelect');
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+        let choice = 'auto';
+        try { choice = localStorage.getItem('theme') || 'auto'; } catch (_) { /* storage blocked */ }
+        if (!['auto', 'light', 'dark'].includes(choice)) choice = 'auto';
+        this.themeChoice = choice;
+        if (select) select.value = choice;
+
+        if (select) {
+            select.addEventListener('change', () => {
+                this.themeChoice = select.value;
+                try { localStorage.setItem('theme', this.themeChoice); } catch (_) { /* storage blocked */ }
+                this.applyTheme();
+            });
+        }
+        const onSystemChange = () => {
+            if (this.themeChoice === 'auto') this.applyTheme();
+        };
+        if (media.addEventListener) media.addEventListener('change', onSystemChange);
+        else if (media.addListener) media.addListener(onSystemChange);
+
+        this.applyTheme();
+    }
+
+    applyTheme() {
+        const dark = this.themeChoice === 'dark' ||
+            (this.themeChoice === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0B0B0D' : '#FAFAFA');
+        // Desktop shell: keep the native title bar on the same side as the page,
+        // otherwise a forced theme fights the window chrome.
+        const shell = window.__TAURI__ && window.__TAURI__.window;
+        if (shell && typeof shell.getCurrentWindow === 'function') {
+            try {
+                shell.getCurrentWindow().setTheme(dark ? 'dark' : 'light').catch(() => {});
+            } catch (_) { /* older shell without the permission */ }
+        }
     }
 
     // ── Event wiring ────────────────────────────────────────────────────────

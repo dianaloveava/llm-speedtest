@@ -7,6 +7,10 @@ const translations = {
         skipToContent: "Skip to content",
         footer: "LLM SpeedTest - Compare and analyze AI model performance",
         language: "Language",
+        theme: "Theme",
+        themeAuto: "Auto",
+        themeLight: "Light",
+        themeDark: "Dark",
 
         // Header / panels
         settings: "Settings",
@@ -224,6 +228,10 @@ const translations = {
         skipToContent: "跳到主内容",
         footer: "LLM SpeedTest - 比较和分析 AI 模型性能",
         language: "语言",
+        theme: "主题",
+        themeAuto: "跟随系统",
+        themeLight: "浅色",
+        themeDark: "深色",
 
         settings: "设置",
         viewOnGithub: "在 GitHub 上查看",

@@ -93,6 +93,21 @@ class APITester {
         if (typeof i18n !== 'undefined') i18n.onChange(() => this.refreshI18n());
         this.applyMetricLabels();
         this.updateMatrixSummary();
+        this.wireDialogDismiss();
+    }
+
+    // Native <dialog> has no backdrop-click behaviour. A click that lands
+    // outside the dialog's box closes it; Esc keeps working on its own.
+    wireDialogDismiss() {
+        document.querySelectorAll('dialog').forEach(dialog => {
+            dialog.addEventListener('click', (event) => {
+                if (event.target !== dialog) return;   // clicked some content
+                const rect = dialog.getBoundingClientRect();
+                const inside = event.clientX >= rect.left && event.clientX <= rect.right &&
+                    event.clientY >= rect.top && event.clientY <= rect.bottom;
+                if (!inside) dialog.close();
+            });
+        });
     }
 
     // ── Metric labels + hover explanations ──────────────────────────────────

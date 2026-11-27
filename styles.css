@@ -1162,6 +1162,9 @@ tbody tr:hover {
 
 /* ── Dialogs ────────────────────────────────────────────────────────────── */
 .dialog {
+    /* The global reset zeroes margins, taking the UA's `margin: auto` with it —
+       without this a modal dialog sits in the top-left corner. */
+    margin: auto;
     width: min(520px, calc(100vw - 2 * var(--space-4)));
     max-height: min(80vh, 720px);
     padding: 0;

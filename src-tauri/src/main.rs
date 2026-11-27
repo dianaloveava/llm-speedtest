@@ -5,7 +5,10 @@
 // browser origin and therefore no CORS, no preflight and no localhost/127.0.0.1
 // trap. Bytes are streamed to the front-end as they arrive so first-token
 // latency and output speed stay honest.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Always a GUI subsystem app: this exe is double-clicked, and a console window
+// flashing up is noise. (Tauri's template only sets this for release builds,
+// so `cargo build` produced a console-subsystem binary.)
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -13,7 +16,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::sync::{oneshot, Mutex};
 
 #[derive(Default)]
@@ -189,6 +192,16 @@ async fn http_cancel(id: u64, state: State<'_, AppState>) -> Result<(), String> 
 
 fn main() {
     tauri::Builder::default()
+        // A second launch must not die quietly: WebView2 refuses to share the
+        // profile (0x8007139F) and, as a GUI-subsystem app, the failure has no
+        // console to print to. Hand the attempt to the running window instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![http_stream, http_cancel])
         .run(tauri::generate_context!())

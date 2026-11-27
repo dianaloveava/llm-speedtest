@@ -97,6 +97,7 @@ npm run build   # produce installers (Windows .msi/.exe, macOS .dmg, Linux .deb/
 
 - The first build needs Rust (rustup + MSVC Build Tools) and WebView2 (bundled with Win11).
 - The front-end is still the same handful of files; `dist/` is generated at build time and not committed — the desktop app is just a host for that page.
+- Just want to double-click it: `cargo build --release` produces `src-tauri/target/release/llm-speedtest.exe` (GUI subsystem, no terminal window); launching it again only focuses the window that is already open.
 - Cross-platform: build on Windows / macOS / Linux natively (a CI matrix works well); Linux needs WebKitGTK 4.1+.
 
 > If `cargo` stalls fetching crates (mirror 403 / connection reset), retry against the default registry:

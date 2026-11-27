@@ -1490,3 +1490,137 @@ tbody tr:hover {
     font-size: var(--fs-xs);
     overflow-wrap: anywhere;
 }
+
+/* ── Metrics: hover hints ───────────────────────────────────────────────── */
+th[data-metric],
+.detail-label[data-metric] {
+    cursor: help;
+}
+
+th[data-metric]::after,
+.detail-label[data-metric]::after {
+    content: "ⓘ";
+    margin-left: var(--space-1);
+    font-size: 0.85em;
+    opacity: 0.45;
+    font-weight: 400;
+}
+
+/* ── Channels: name, models as chips, collapsed summary ─────────────────── */
+.target-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    font-size: var(--fs-base);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 2px var(--space-2);
+    color: var(--text);
+}
+
+.target-name:hover {
+    border-color: var(--border);
+}
+
+.target-name:focus {
+    border-color: var(--accent);
+    background: var(--bg-card);
+    outline: none;
+}
+
+.target-summary {
+    display: none;
+    padding: 0 var(--space-1) var(--space-2);
+    font-size: var(--fs-xs);
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+}
+
+.target-collapsed .target-fields,
+.target-collapsed .target-summary {
+    display: none;
+}
+
+.target-collapsed .target-summary {
+    display: block;
+}
+
+.model-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    min-height: 28px;
+    padding: var(--space-1) 0;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 100%;
+    padding: 2px var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    color: var(--text);
+    font-size: var(--fs-xs);
+    cursor: pointer;
+}
+
+.chip-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chip.is-off {
+    opacity: 0.45;
+    text-decoration: line-through;
+}
+
+.chip-remove {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font-size: var(--fs-xs);
+}
+
+.model-add {
+    width: 100%;
+    font-size: var(--fs-xs);
+    padding: var(--space-1) var(--space-2);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+}
+
+.model-add:focus {
+    border-style: solid;
+    border-color: var(--accent);
+    outline: none;
+}
+
+.models-empty {
+    font-size: var(--fs-xs);
+    color: var(--text-tertiary);
+}
+
+/* ── Run bar: what the matrix will do ───────────────────────────────────── */
+.matrix-summary {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    padding: 0 0 var(--space-1);
+}
+
+/* ── Prompts: length badge ──────────────────────────────────────────────── */
+.prompt-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--fs-xs);
+    color: var(--text-tertiary);
+}

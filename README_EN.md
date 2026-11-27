@@ -34,23 +34,30 @@ Everything runs locally in your browser: API keys are stored only in your browse
 - True SSE streaming with per-token timestamps
 - Real token usage is captured when providers report it (OpenAI `stream_options.include_usage`, Anthropic `message_delta.usage`, Gemini `usageMetadata`); falls back to estimation otherwise
 
-### Metrics
-- **TTFT** (time to first token): average / P50 / P90 / P95 / P99
-- **Total latency** (TTLT): average
-- **Output speed** (t/s): average / P50 / P90
-- **TPOT** (ms per output token, excluding the first-token wait)
-- **ITL** (inter-token latency): P90 / max
-- **Input (prefill) speed** (t/s)
-- Token counts, success rate, and error classification (rate limit 429 / auth 401·403 / bad request / timeout / server 5xx / network / cancelled)
+### Metrics (every header carries an ⓘ with its definition)
+- **TTFB**: request sent → response headers; network and queueing included, no tokens yet
+- **TTFT**: request sent → first content token; average / P50 / P90 / P95 / P99
+- **E2E**: request sent → stream closed (wall clock)
+- **Generation**: E2E − TTFT — the window that actually produced tokens
+- **TPS (E2E)**: output tokens ÷ E2E, diluted by the first-token wait
+- **TPS (gen)**: output tokens ÷ generation window — the model's steady-state speed
+- **TPOT**: generation window ÷ (output tokens − 1)
+- **ITL**: gap between chunk arrivals, P90 / max (stalls show up in the max)
+- **Input speed**: input tokens ÷ TTFT
+- **Token usage**: input / output / cached / reasoning — API-reported when available, estimated otherwise
+- **Cost** from your price table; success rate, error rate and classification (429 / auth / 400 / timeout / 5xx / network / cancelled)
 
 ### Cost Analysis
 - Per-model price configuration (`model=input_price,output_price` in $/1M tokens, e.g. `gpt-4o=2.5,10`)
 - Per-request and total cost, tokens per dollar
 
 ### Workflow
-- Multiple targets, each with its own protocol / base URL / API key / models
+- **Channels**: a channel is a name + protocol + base URL + key; models are chips you can enable, disable or delete individually
+- Many models per channel, many channels on the same endpoint — results and statistics stay grouped by channel + model
+- The run bar shows the matrix: `channels × models × prompts × rounds = requests`
+- Channels collapse, duplicate (keys included) and reorder; five Chinese prompts (14 → 183 chars) ship as a length ladder
 - Concurrent requests and configurable test rounds
-- Enable/disable targets with collapsible rows
+- Disable a channel without losing its config
 - Live tab for the in-flight request; per-request detail dialog afterwards
 - Test history (last 20 runs, stored locally) with model-level summary, per-record delete, re-run and export
 - CSV / JSON export (per-request results and per-model statistics), plus configuration import/export

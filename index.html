@@ -139,6 +139,7 @@
             </div>
 
             <div class="run-bar">
+                <div id="matrixSummary" class="matrix-summary"></div>
                 <div class="run-progress">
                     <div class="run-progress-track">
                         <div id="runProgressBar" class="run-progress-fill"></div>
@@ -217,18 +218,23 @@
                 <div class="table-scroll">
                     <table id="resultsTable">
                         <caption class="visually-hidden" data-i18n="results">结果</caption>
-                        <thead>
+                                                <thead>
                             <tr>
-                                <th scope="col" data-sort="model" data-i18n="model">模型</th>
-                                <th scope="col" data-sort="target" data-i18n="target">目标</th>
-                                <th scope="col" data-sort="prompt" data-i18n="prompt">提示词</th>
-                                <th scope="col" data-sort="round" data-i18n="round">轮次</th>
-                                <th scope="col" data-sort="firstToken" data-i18n="firstTokenTime">首字响应 (ms)</th>
-                                <th scope="col" data-sort="speed" data-i18n="outputSpeed">输出速度 (t/s)</th>
-                                <th scope="col" data-i18n="result">结果</th>
-                                <th scope="col" data-i18n="error">错误</th>
-                                <th scope="col" data-sort="status" data-i18n="status">状态</th>
-                                <th scope="col" data-i18n="actions">操作</th>
+                                <th scope="col" data-sort="model" data-metric="model"></th>
+                                <th scope="col" data-sort="target" data-metric="channel"></th>
+                                <th scope="col" data-sort="prompt" data-metric="prompt"></th>
+                                <th scope="col" data-sort="round" data-metric="round"></th>
+                                <th scope="col" data-sort="ttfb" data-metric="ttfb"></th>
+                                <th scope="col" data-sort="firstToken" data-metric="ttft"></th>
+                                <th scope="col" data-sort="latency" data-metric="e2e"></th>
+                                <th scope="col" data-sort="speed" data-metric="tps"></th>
+                                <th scope="col" data-sort="tpsGen" data-metric="tpsGen"></th>
+                                <th scope="col" data-sort="tpot" data-metric="tpot"></th>
+                                <th scope="col" data-sort="tokens" data-metric="tokensOut"></th>
+                                <th scope="col" data-i18n="result"></th>
+                                <th scope="col" data-i18n="error"></th>
+                                <th scope="col" data-sort="status" data-metric="status"></th>
+                                <th scope="col" data-i18n="actions"></th>
                             </tr>
                         </thead>
                         <tbody id="resultsBody"></tbody>
@@ -247,27 +253,28 @@
                 <div class="table-scroll">
                     <table id="statisticsTable">
                         <caption class="visually-hidden" data-i18n="statistics">统计信息</caption>
-                        <thead>
+                                                <thead>
                             <tr>
-                                <th scope="col" data-i18n="model">模型</th>
-                                <th scope="col" data-i18n="target">目标</th>
-                                <th scope="col" data-i18n="averageFirstToken">平均首字响应 (ms)</th>
-                                <th scope="col" data-i18n="p50FirstToken">P50 首字响应 (ms)</th>
-                                <th scope="col" data-i18n="p90FirstToken">P90 首字响应 (ms)</th>
-                                <th scope="col" data-i18n="p95FirstToken">P95 首字响应 (ms)</th>
-                                <th scope="col" data-i18n="p99FirstToken">P99 首字响应 (ms)</th>
-                                <th scope="col" data-i18n="totalLatency">平均总响应 (ms)</th>
-                                <th scope="col" data-i18n="averageOutputSpeed">平均输出速度 (t/s)</th>
-                                <th scope="col" data-i18n="p50Speed">P50 速度 (t/s)</th>
-                                <th scope="col" data-i18n="p90Speed">P90 速度 (t/s)</th>
-                                <th scope="col" data-i18n="tpot">平均 TPOT (ms/token)</th>
-                                <th scope="col" data-i18n-title="chunkInterval">
-                                    <span data-i18n="itlP90">ITL P90 (ms)</span>*
-                                </th>
-                                <th scope="col" data-i18n="inputTps">输入速度 (t/s)</th>
-                                <th scope="col" data-i18n="totalTokens">总 Tokens</th>
-                                <th scope="col" data-i18n="avgCost">平均成本 ($)</th>
-                                <th scope="col" data-i18n="successRate">成功率</th>
+                                <th scope="col" data-metric="model"></th>
+                                <th scope="col" data-metric="channel"></th>
+                                <th scope="col" data-metric="ttfb"></th>
+                                <th scope="col" data-metric="ttft"></th>
+                                <th scope="col" data-metric="ttftP50"></th>
+                                <th scope="col" data-metric="ttftP90"></th>
+                                <th scope="col" data-metric="ttftP95"></th>
+                                <th scope="col" data-metric="ttftP99"></th>
+                                <th scope="col" data-metric="e2e"></th>
+                                <th scope="col" data-metric="tps"></th>
+                                <th scope="col" data-metric="tpsGen"></th>
+                                <th scope="col" data-metric="tpot"></th>
+                                <th scope="col" data-metric="itlP90"></th>
+                                <th scope="col" data-metric="itlMax"></th>
+                                <th scope="col" data-metric="prefill"></th>
+                                <th scope="col" data-metric="tokensOutMax"></th>
+                                <th scope="col" data-metric="totalTokens"></th>
+                                <th scope="col" data-metric="avgCost"></th>
+                                <th scope="col" data-metric="success"></th>
+                                <th scope="col" data-metric="error"></th>
                             </tr>
                         </thead>
                         <tbody id="statisticsBody"></tbody>
@@ -344,28 +351,88 @@
         <div class="dialog-body">
             <div class="detail-grid">
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="model">模型</span>
+                    <span class="detail-label" data-metric="model"></span>
                     <span id="detailModel" class="detail-value">-</span>
                 </div>
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="round">轮次</span>
+                    <span class="detail-label" data-metric="channel"></span>
+                    <span id="detailTarget" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="round"></span>
                     <span id="detailRound" class="detail-value">-</span>
                 </div>
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="status">状态</span>
+                    <span class="detail-label" data-metric="status"></span>
                     <span id="detailStatus" class="detail-value">-</span>
                 </div>
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="firstTokenTime">首字响应 (ms)</span>
+                    <span class="detail-label" data-metric="promptLen"></span>
+                    <span id="detailPromptLen" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="http"></span>
+                    <span id="detailHttp" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="ttfb"></span>
+                    <span id="detailTtfb" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="ttft"></span>
                     <span id="detailFirstToken" class="detail-value">-</span>
                 </div>
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="outputSpeed">输出速度 (t/s)</span>
-                    <span id="detailSpeed" class="detail-value">-</span>
+                    <span class="detail-label" data-metric="e2e"></span>
+                    <span id="detailE2e" class="detail-value">-</span>
                 </div>
                 <div class="detail-field">
-                    <span class="detail-label" data-i18n="tokens">令牌数</span>
+                    <span class="detail-label" data-metric="gen"></span>
+                    <span id="detailGen" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="tps"></span>
+                    <span id="detailTps" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="tpsGen"></span>
+                    <span id="detailTpsGen" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="tpot"></span>
+                    <span id="detailTpot" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="itlP90"></span>
+                    <span id="detailItlP90" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="itlMax"></span>
+                    <span id="detailItlMax" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="tokensIn"></span>
+                    <span id="detailTokensIn" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="tokensOut"></span>
                     <span id="detailTokens" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="cached"></span>
+                    <span id="detailCached" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="reasoning"></span>
+                    <span id="detailReasoning" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="finish"></span>
+                    <span id="detailFinish" class="detail-value">-</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label" data-metric="cost"></span>
+                    <span id="detailCost" class="detail-value">-</span>
                 </div>
             </div>
             <div class="detail-field span-full">

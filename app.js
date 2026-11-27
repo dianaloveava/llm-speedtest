@@ -5,11 +5,53 @@ const STORAGE_CONFIG = 'apiTesterConfig';
 const STORAGE_HISTORY = 'apiTesterHistory';
 const MAX_HISTORY = 20;
 
+// Default prompts: Chinese, one per length rung (≈20 / 30 / 85 / 140 / 190
+// characters), so a run answers "does TTFT and TPS move with prompt length?".
 const DEFAULT_PROMPTS = [
-    'Explain the concept of "quantum entanglement" to a high school student, including its potential applications.',
-    'Discuss the primary ethical challenges posed by the rapid development of autonomous vehicles.',
-    'Write a short story about a sentient AI that discovers a hidden message within the internet\'s oldest data archives.'
+    '用一句话解释什么是量子纠缠。',
+    '用三句话向高中生解释量子纠缠，并给出一个生活化的类比。',
+    '请写一段约 300 字的说明文，介绍量子纠缠的基本概念、它为什么不能用来超光速通信，以及它在量子计算中的作用。要求结构清晰，不使用公式，结尾用一句话概括。',
+    '你是一名后端架构师。请写一份约 600 字的技术方案，说明如何为一个日均 1 亿请求的 API 网关设计限流：包括令牌桶与滑动窗口的取舍、分布式配额的一致性策略、突发流量与降级方案、需要监控的核心指标与告警阈值、以及灰度上线步骤。要求分小节，给出关键参数示例，最后列出三个主要风险。',
+    '请以《分布式系统中的时间》为题，写一篇约 1200 字的科普文章。要求：(1) 从时钟漂移、NTP 与单调时钟讲起；(2) 解释逻辑时钟、向量时钟与混合逻辑时钟各自解决的问题和代价；(3) 结合一个真实场景（例如分布式锁或事务提交）说明时间假设出错会导致什么故障；(4) 给出工程上可执行的五条建议。文章面向有三年经验的工程师，使用小标题、不要公式、避免鸡汤式总结。'
 ];
+
+// Every metric the UI shows is labelled and explained here once; the results
+// table, the statistics table and the detail dialog all render from this map,
+// so a label and its tooltip can never drift apart.
+const METRICS = {
+    model: { label: 'model' },
+    channel: { label: 'target', tip: 'tipChannel' },
+    prompt: { label: 'prompt', tip: 'tipPrompt' },
+    promptLen: { label: 'mPromptLen', tip: 'tipPromptLen' },
+    round: { label: 'round' },
+    status: { label: 'status' },
+    http: { label: 'mHttp', tip: 'tipHttp' },
+    ttfb: { label: 'mTtfb', tip: 'tipTtfb' },
+    ttft: { label: 'mTtft', tip: 'tipTtft' },
+    e2e: { label: 'mE2e', tip: 'tipE2e' },
+    gen: { label: 'mGen', tip: 'tipGen' },
+    tps: { label: 'mTps', tip: 'tipTps' },
+    tpsGen: { label: 'mTpsGen', tip: 'tipTpsGen' },
+    tpot: { label: 'mTpot', tip: 'tipTpot' },
+    itlP90: { label: 'mItlP90', tip: 'tipItlP90' },
+    itlMax: { label: 'mItlMax', tip: 'tipItlMax' },
+    prefill: { label: 'mPrefill', tip: 'tipPrefill' },
+    tokensIn: { label: 'mTokensIn', tip: 'tipTokensIn' },
+    tokensOut: { label: 'mTokensOut', tip: 'tipTokensOut' },
+    tokensOutMax: { label: 'mTokensOutMax', tip: 'tipTokensOutMax' },
+    totalTokens: { label: 'mTotalTokens', tip: 'tipTotalTokens' },
+    cached: { label: 'mCached', tip: 'tipCached' },
+    reasoning: { label: 'mReasoning', tip: 'tipReasoning' },
+    finish: { label: 'mFinish', tip: 'tipFinish' },
+    cost: { label: 'mCost', tip: 'tipCost' },
+    avgCost: { label: 'mAvgCost', tip: 'tipCost' },
+    success: { label: 'mSuccess', tip: 'tipSuccess' },
+    error: { label: 'mError', tip: 'tipError' },
+    ttftP50: { label: 'mTtftP50', tip: 'tipTtftPct' },
+    ttftP90: { label: 'mTtftP90', tip: 'tipTtftPct' },
+    ttftP95: { label: 'mTtftP95', tip: 'tipTtftPct' },
+    ttftP99: { label: 'mTtftP99', tip: 'tipTtftPct' }
+};
 
 class APITester {
     constructor() {
@@ -46,10 +88,62 @@ class APITester {
         this.syncConfigToggle();
         this.renderResults();
         this.displayStatistics({});
-        this.renderHistoryRecords();
         this.updateRunControls(false);
         this.updateRunProgress();
         if (typeof i18n !== 'undefined') i18n.onChange(() => this.refreshI18n());
+        this.applyMetricLabels();
+        this.updateMatrixSummary();
+    }
+
+    // ── Metric labels + hover explanations ──────────────────────────────────
+    metricText(id) {
+        const m = METRICS[id];
+        return i18n.t(m ? m.label : id);
+    }
+
+    metricTip(id) {
+        const m = METRICS[id];
+        return m && m.tip ? i18n.t(m.tip) : '';
+    }
+
+    // Every [data-metric] element gets its label and a title tooltip. The
+    // results header is rewritten afterwards because it also carries the sort
+    // arrow.
+    applyMetricLabels() {
+        document.querySelectorAll('[data-metric]').forEach(el => {
+            if (el.tagName === 'TH') return;
+            el.textContent = this.metricText(el.dataset.metric);
+            const tip = this.metricTip(el.dataset.metric);
+            if (tip) el.title = tip;
+        });
+        document.querySelectorAll('#statisticsTable thead th[data-metric]').forEach(th => {
+            th.textContent = this.metricText(th.dataset.metric);
+            const tip = this.metricTip(th.dataset.metric);
+            if (tip) th.title = tip;
+        });
+        this.updateSortIndicators();
+    }
+
+    // "2 channels × 4 models × 5 prompts × 1 round = 40 requests" — the run
+    // scope before pressing Start.
+    updateMatrixSummary() {
+        const el = document.getElementById('matrixSummary');
+        if (!el) return;
+        const channels = this.getAllTargets().filter(t => t.enabled);
+        const models = channels.reduce((n, t) => n + t.models.length, 0);
+        const prompts = this.getPrompts().length;
+        const rounds = this.clamp(Math.round(this.num(document.getElementById('rounds')?.value, 1)), 1, 10);
+        el.textContent = i18n.t('matrixSummary', {
+            channels: channels.length, models, prompts, rounds, total: models * prompts * rounds
+        });
+    }
+
+    refreshPromptMeta() {
+        document.querySelectorAll('#promptList .prompt-row').forEach(row => {
+            const ta = row.querySelector('.prompt-input');
+            const len = row.querySelector('.prompt-len');
+            if (ta && len) len.textContent = i18n.t('promptLen', { n: this.promptLength(ta.value) });
+        });
     }
 
     // ── Theme ───────────────────────────────────────────────────────────────
@@ -238,6 +332,9 @@ class APITester {
         document.querySelectorAll('.tab-panel').forEach(panel => {
             panel.hidden = panel.id !== `tab-${name}`;
         });
+        // History is only ever looked at on demand — building it at boot costs
+        // more the longer the record list grows.
+        if (name === 'history') this.renderHistoryRecords();
     }
 
     // ── Mobile config panel ─────────────────────────────────────────────────
@@ -280,7 +377,10 @@ class APITester {
         const protocol = data?.protocol || 'openai-chat-completions';
         const apiUrl = data?.apiUrl || '';
         const apiKey = data?.apiKey || '';
-        const models = Array.isArray(data?.models) ? data.models.join('\n') : (data?.models || '');
+        const models = this.normalizeModels(data?.models);
+        const disabledSet = new Set(this.normalizeModels(data?.disabledModels));
+        const name = String(data?.name || '').trim() ||
+            i18n.t('channelDefault', { n: list.querySelectorAll('.target-row').length + 1 });
 
         const row = document.createElement('div');
         row.className = 'target-row';
@@ -288,14 +388,17 @@ class APITester {
         row.innerHTML = `
             <div class="target-head">
                 <span class="target-label">#${list.children.length + 1}</span>
+                <input type="text" class="target-name" value="${this.escapeHtml(name)}" data-i18n-aria="channelName" aria-label="渠道名称" autocomplete="off">
                 <div class="target-actions">
                     <button type="button" class="icon-btn act-dup" data-i18n-title="duplicateTarget" data-i18n-aria="duplicateTarget">⧉</button>
                     <button type="button" class="icon-btn act-up" data-i18n-title="moveUp" data-i18n-aria="moveUp">↑</button>
                     <button type="button" class="icon-btn act-down" data-i18n-title="moveDown" data-i18n-aria="moveDown">↓</button>
+                    <button type="button" class="icon-btn act-collapse" data-i18n-title="collapseChannel" data-i18n-aria="collapseChannel">▾</button>
                     <button type="button" class="icon-btn act-toggle"></button>
                     <button type="button" class="icon-btn act-remove" data-i18n-title="removeTarget" data-i18n-aria="removeTarget">✕</button>
                 </div>
             </div>
+            <div class="target-summary"></div>
             <div class="target-fields">
                 <div class="field">
                     <label class="field-label" for="tp-${id}" data-i18n="targetProtocol">Protocol</label>
@@ -318,10 +421,11 @@ class APITester {
                 </div>
                 <div class="field">
                     <div class="models-head">
-                        <label class="field-label" for="tm-${id}" data-i18n="targetModels">Models (one per line)</label>
-                        <button type="button" class="btn btn-ghost btn-sm fetch-models-btn" data-i18n="fetchModels">Fetch Models</button>
+                        <span class="field-label" data-i18n="targetModels">模型</span>
+                        <button type="button" class="btn btn-ghost btn-sm fetch-models-btn" data-i18n="fetchModels">拉取模型</button>
                     </div>
-                    <textarea id="tm-${id}" class="target-models" rows="2" placeholder="gpt-3.5-turbo"></textarea>
+                    <div class="model-chips"></div>
+                    <input type="text" class="model-add" data-i18n-ph="modelAddPlaceholder" placeholder="输入模型名，回车添加" autocomplete="off">
                 </div>
             </div>
         `;
@@ -330,7 +434,7 @@ class APITester {
         row.querySelector('.target-protocol').value = protocol;
         row.querySelector('.target-apiurl').value = apiUrl;
         row.querySelector('.target-apikey').value = apiKey;
-        row.querySelector('.target-models').value = models;
+        models.forEach(m => this.addModelChip(row, m, !disabledSet.has(m)));
 
         this.wireTargetRow(row);
         list.appendChild(row);
@@ -338,6 +442,7 @@ class APITester {
 
         this.completeTargetUrl(row);
         this.updateTargetPreview(row);
+        this.updateTargetSummary(row);
         this.updateTargetLabels();
         this.updateTargetButtons();
         this.saveConfig();
@@ -348,24 +453,59 @@ class APITester {
         const protocolSel = row.querySelector('.target-protocol');
         const apiUrlInput = row.querySelector('.target-apiurl');
         const apiKeyInput = row.querySelector('.target-apikey');
-        const modelsInput = row.querySelector('.target-models');
+        const nameInput = row.querySelector('.target-name');
+        const modelAdd = row.querySelector('.model-add');
+        const chipBox = row.querySelector('.model-chips');
         const toggleKeyBtn = row.querySelector('.toggle-key');
 
         protocolSel.addEventListener('change', () => {
             this.completeTargetUrl(row);
             this.updateTargetPreview(row);
+            this.updateTargetSummary(row);
             this.saveConfig();
         });
         apiUrlInput.addEventListener('input', () => {
             this.updateTargetPreview(row);
+            this.updateTargetSummary(row);
             this.saveConfig();
         });
         apiKeyInput.addEventListener('input', () => this.saveConfig());
-        modelsInput.addEventListener('input', () => this.saveConfig());
+        nameInput.addEventListener('input', () => {
+            this.updateTargetSummary(row);
+            this.saveConfig();
+        });
+
+        const commitModel = () => {
+            const value = modelAdd.value.trim();
+            if (!value) return;
+            this.addModelChip(row, value, true);
+            modelAdd.value = '';
+            this.updateTargetSummary(row);
+            this.saveConfig();
+        };
+        modelAdd.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitModel(); }
+        });
+        modelAdd.addEventListener('blur', commitModel);
+
+        chipBox.addEventListener('click', (e) => {
+            const chip = e.target.closest('.chip');
+            if (!chip) return;
+            if (e.target.closest('.chip-remove')) {
+                chip.remove();
+            } else {
+                chip.classList.toggle('is-off');
+            }
+            this.updateTargetSummary(row);
+            this.saveConfig();
+        });
 
         row.querySelector('.act-toggle').addEventListener('click', () => {
             this.setTargetDisabled(row, !row.classList.contains('target-disabled'));
             this.saveConfig();
+        });
+        row.querySelector('.act-collapse').addEventListener('click', () => {
+            this.setTargetCollapsed(row, !row.classList.contains('target-collapsed'));
         });
         row.querySelector('.act-dup').addEventListener('click', () => this.duplicateTargetRow(row));
         row.querySelector('.act-up').addEventListener('click', () => this.moveTarget(row, -1));
@@ -383,6 +523,67 @@ class APITester {
                 toggleKeyBtn.textContent = '👁';
             }
         });
+    }
+
+    // Accepts what older configs stored: newline text, string[], or
+    // [{id, enabled}]; always returns a clean string[].
+    normalizeModels(value) {
+        if (!value) return [];
+        const list = Array.isArray(value) ? value : String(value).split('\n');
+        return [...new Set(list
+            .map(v => typeof v === 'string' ? v.trim() : String(v?.id ?? v?.model ?? '').trim())
+            .filter(Boolean))];
+    }
+
+    addModelChip(row, model, enabled = true) {
+        const box = row.querySelector('.model-chips');
+        if (!box) return;
+        const name = String(model || '').trim();
+        if (!name) return;
+        if (Array.from(box.querySelectorAll('.chip')).some(c => c.dataset.model === name)) return;
+        const chip = document.createElement('span');
+        chip.className = 'chip' + (enabled ? '' : ' is-off');
+        chip.dataset.model = name;
+        chip.innerHTML = `
+            <button type="button" class="chip-toggle"><span class="chip-title">${this.escapeHtml(name)}</span></button>
+            <button type="button" class="chip-remove" data-i18n-aria="removeModel" aria-label="移除">✕</button>`;
+        box.appendChild(chip);
+    }
+
+    modelState(row) {
+        const chips = Array.from(row.querySelectorAll('.model-chips .chip'));
+        return {
+            models: chips.filter(c => !c.classList.contains('is-off')).map(c => c.dataset.model),
+            disabledModels: chips.filter(c => c.classList.contains('is-off')).map(c => c.dataset.model)
+        };
+    }
+
+    setTargetCollapsed(row, collapsed) {
+        row.classList.toggle('target-collapsed', collapsed);
+        const btn = row.querySelector('.act-collapse');
+        if (btn) {
+            btn.textContent = collapsed ? '▸' : '▾';
+            const label = i18n.t(collapsed ? 'expandChannel' : 'collapseChannel');
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+        }
+        this.updateTargetSummary(row);
+    }
+
+    updateTargetSummary(row) {
+        const summary = row.querySelector('.target-summary');
+        if (!summary) return;
+        const data = this.getTargetData(row);
+        const spec = APIHandler.getProtocol(data.protocol);
+        let host = data.apiUrl;
+        try { host = new URL(data.apiUrl).host; } catch (_) { /* keep raw */ }
+        const models = row.querySelectorAll('.model-chips .chip').length;
+        summary.textContent = [
+            data.name || i18n.t('channelName'),
+            spec ? spec.label : data.protocol,
+            host,
+            i18n.t('modelCount', { n: models })
+        ].filter(Boolean).join(' · ');
     }
 
     setTargetDisabled(row, disabled) {
@@ -417,10 +618,12 @@ class APITester {
     duplicateTargetRow(row) {
         const data = this.getTargetData(row);
         const clone = this.addTargetRow({
+            name: i18n.t('channelCopy', { name: data.name }),
             protocol: data.protocol,
             apiUrl: data.apiUrl,
-            apiKey: '',
-            models: data.models.slice(),
+            apiKey: data.apiKey,          // same vendor, same key: a channel copy keeps it
+            models: data.models,
+            disabledModels: data.disabledModels,
             enabled: data.enabled
         });
         if (clone) {
@@ -484,12 +687,15 @@ class APITester {
     }
 
     getTargetData(row) {
+        const state = this.modelState(row);
         return {
             enabled: !row.classList.contains('target-disabled'),
+            name: (row.querySelector('.target-name')?.value || '').trim(),
             protocol: row.querySelector('.target-protocol')?.value || 'openai-chat-completions',
             apiUrl: (row.querySelector('.target-apiurl')?.value || '').trim(),
             apiKey: (row.querySelector('.target-apikey')?.value || '').trim(),
-            models: this.splitLines(row.querySelector('.target-models')?.value || '')
+            models: state.models,
+            disabledModels: state.disabledModels
         };
     }
 
@@ -498,6 +704,8 @@ class APITester {
     }
 
     targetLabel(target) {
+        const name = String(target.name || '').trim();
+        if (name) return name;
         const spec = APIHandler.getProtocol(target.protocol);
         const label = spec ? spec.label : target.protocol;
         let host = '';
@@ -534,12 +742,18 @@ class APITester {
         row.className = 'prompt-row';
         row.innerHTML = `
             <textarea class="prompt-input" rows="2" data-i18n-ph="promptPh" placeholder="Prompt text..."></textarea>
+            <div class="prompt-meta"><span class="prompt-len"></span></div>
             <button type="button" class="icon-btn prompt-remove" data-i18n-title="deletePrompt" data-i18n-aria="deletePrompt">✕</button>
         `;
         this.applyI18n(row);
         const ta = row.querySelector('.prompt-input');
+        const len = row.querySelector('.prompt-len');
+        const updateLen = () => {
+            if (len) len.textContent = i18n.t('promptLen', { n: this.promptLength(ta.value) });
+        };
         ta.value = text;
-        ta.addEventListener('input', () => this.saveConfig());
+        updateLen();
+        ta.addEventListener('input', () => { updateLen(); this.saveConfig(); });
         ta.addEventListener('change', () => this.saveConfig());
         row.querySelector('.prompt-remove').addEventListener('click', () => {
             row.remove();
@@ -644,16 +858,19 @@ class APITester {
 
         if (Array.isArray(saved.targets)) {
             saved.targets.forEach(t => this.addTargetRow({
+                name: t?.name,
                 protocol: t?.protocol,
                 apiUrl: t?.apiUrl,
                 apiKey: t?.apiKey,
                 models: t?.models,
+                disabledModels: t?.disabledModels,
                 enabled: t?.enabled !== false
             }));
         }
     }
 
     saveConfig() {
+        this.updateMatrixSummary();
         clearTimeout(this._saveTimer);
         this._saveTimer = setTimeout(() => this.writeConfig(), 300);
     }
@@ -719,10 +936,12 @@ class APITester {
         const targetList = document.getElementById('targetList');
         if (targetList) targetList.innerHTML = '';
         (data.targets || []).forEach(t => this.addTargetRow({
+            name: t?.name,
             protocol: t?.protocol,
             apiUrl: t?.apiUrl,
             apiKey: '',
             models: t?.models,
+            disabledModels: t?.disabledModels,
             enabled: t?.enabled !== false
         }));
         if (document.querySelectorAll('#targetList .target-row').length === 0) this.addTargetRow();
@@ -836,7 +1055,9 @@ class APITester {
             return;
         }
         const merged = [...new Set([...this.getTargetData(row).models, ...selected])];
-        row.querySelector('.target-models').value = merged.join('\n');
+        merged.forEach(m => this.addModelChip(row, m, true));
+        this.updateTargetSummary(row);
+        this.updateMatrixSummary();
         this.saveConfig();
         this.closeModelPicker();
     }
@@ -880,8 +1101,7 @@ class APITester {
             return;
         }
         const apiKey = row.querySelector('.target-apikey').value;
-        const firstModel = row.querySelector('.target-models').value
-            .split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+        const firstModel = this.getTargetData(row).models[0] || '';
 
         if (btn) { btn.disabled = true; btn.textContent = i18n.t('detecting'); }
         try {
@@ -1160,8 +1380,12 @@ class APITester {
             model,
             target,
             prompt,
+            promptChars: this.promptLength(prompt),
             round,
             firstTokenTime: null,
+            ttfb: null,
+            httpStatus: null,
+            genTime: null,
             outputSpeed: 0,
             totalTokens: 0,
             totalLatency: null,
@@ -1177,8 +1401,24 @@ class APITester {
         };
     }
 
+    // Characters as a reader counts them (code points, not UTF-16 units).
+    promptLength(text) {
+        return Array.from(String(text || '')).length;
+    }
+
+    // Tokens per second over the generation window only (E2E speed is diluted
+    // by time-to-first-token; this is the model's steady-state rate).
+    tpsGenOf(record) {
+        const tokens = record.usage?.output ?? record.totalTokens;
+        if (!tokens || !record.genTime || record.genTime <= 0) return null;
+        return tokens / (record.genTime / 1000);
+    }
+
     applyProgress(record, data) {
         if (data.firstTokenTime !== undefined) record.firstTokenTime = data.firstTokenTime;
+        if (data.ttfb !== undefined) record.ttfb = data.ttfb;
+        if (data.httpStatus !== undefined) record.httpStatus = data.httpStatus;
+        if (data.genTime !== undefined) record.genTime = data.genTime;
         if (data.outputSpeed !== undefined && data.outputSpeed !== null) {
             record.outputSpeed = parseFloat(data.outputSpeed) || 0;
         }
@@ -1215,7 +1455,13 @@ class APITester {
     sortValue(record, key) {
         switch (key) {
             case 'firstToken': return record.firstTokenTime ?? null;
+            case 'ttfb': return record.ttfb ?? null;
+            case 'latency': return record.totalLatency ?? null;
             case 'speed': return record.outputSpeed ?? null;
+            case 'tpsGen': return this.tpsGenOf(record);
+            case 'tpot': return record.tpot ?? null;
+            case 'tokens': return record.usage?.output ?? record.totalTokens ?? null;
+            case 'prompt': return record.promptChars ?? this.promptLength(record.prompt);
             case 'round': return record.round ?? null;
             case 'status': return record.status || '';
             default: return record[key] != null ? record[key] : null;
@@ -1268,16 +1514,23 @@ class APITester {
     }
 
     resultRowHtml(record) {
-        const testing = record.status === 'testing';
         const resultText = this.truncate(record.result, 160);
         const errorText = record.error ? this.truncate(record.error, 80) : '';
+        const ms = v => (v != null ? v + 'ms' : '-');
+        const num = (v, digits = 2) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v).toFixed(digits) : '-');
+        const tokensOut = record.usage?.output ?? record.totalTokens;
         return `<tr data-test-id="${record.testId}">
             <td class="cell-model" title="${this.escapeHtml(record.model)}">${this.escapeHtml(record.model)}</td>
             <td class="cell-target" title="${this.escapeHtml(record.target)}">${this.escapeHtml(this.truncate(record.target, 40))}</td>
-            <td class="cell-prompt" title="${this.escapeHtml(record.prompt)}">${this.escapeHtml(this.truncate(record.prompt, 50))}</td>
+            <td class="cell-prompt" title="${this.escapeHtml(record.prompt)}">${this.escapeHtml(`${record.promptChars ?? this.promptLength(record.prompt)}字 · ${this.truncate(record.prompt, 40)}`)}</td>
             <td class="cell-round">${this.escapeHtml(String(record.round))}</td>
-            <td class="cell-first-token">${record.firstTokenTime != null ? this.escapeHtml(record.firstTokenTime + 'ms') : '-'}</td>
-            <td class="cell-speed">${record.outputSpeed ? this.escapeHtml(Number(record.outputSpeed).toFixed(2)) : '-'}</td>
+            <td class="cell-ttfb">${ms(record.ttfb)}</td>
+            <td class="cell-first-token">${ms(record.firstTokenTime)}</td>
+            <td class="cell-e2e">${ms(record.totalLatency)}</td>
+            <td class="cell-speed">${num(record.outputSpeed)}</td>
+            <td class="cell-tps-gen">${num(this.tpsGenOf(record))}</td>
+            <td class="cell-tpot">${num(record.tpot)}</td>
+            <td class="cell-tokens">${tokensOut ? this.escapeHtml(String(tokensOut)) : '-'}</td>
             <td class="cell-result">${this.escapeHtml(resultText)}</td>
             <td class="cell-error">${errorText ? this.escapeHtml(errorText) : '-'}</td>
             <td class="cell-status">${this.statusBadgeHtml(record.status)}</td>
@@ -1304,8 +1557,11 @@ class APITester {
     updateSortIndicators() {
         document.querySelectorAll('#resultsTable thead th[data-sort]').forEach(th => {
             const key = th.dataset.sort;
-            const label = i18n.t(th.getAttribute('data-i18n'));
-            th.textContent = this.sortKey === key ? `${label} ${this.sortDir === 1 ? '↑' : '↓'}` : label;
+            const label = th.dataset.metric ? this.metricText(th.dataset.metric) : i18n.t(th.getAttribute('data-i18n'));
+            const arrow = this.sortKey === key ? (this.sortDir === 1 ? ' ↑' : ' ↓') : '';
+            th.textContent = label + arrow;
+            const tip = th.dataset.metric ? this.metricTip(th.dataset.metric) : '';
+            if (tip) th.title = tip;
             th.setAttribute('aria-sort', this.sortKey === key
                 ? (this.sortDir === 1 ? 'ascending' : 'descending') : 'none');
         });
@@ -1339,8 +1595,15 @@ class APITester {
             const cell = row.querySelector(selector);
             if (cell) cell.textContent = value;
         };
+        setText('.cell-ttfb', record.ttfb != null ? record.ttfb + 'ms' : '-');
         setText('.cell-first-token', record.firstTokenTime != null ? record.firstTokenTime + 'ms' : '-');
+        setText('.cell-e2e', record.totalLatency != null ? record.totalLatency + 'ms' : '-');
         setText('.cell-speed', record.outputSpeed ? Number(record.outputSpeed).toFixed(2) : '-');
+        const tpsGen = this.tpsGenOf(record);
+        setText('.cell-tps-gen', tpsGen != null ? tpsGen.toFixed(2) : '-');
+        setText('.cell-tpot', record.tpot != null ? Number(record.tpot).toFixed(2) : '-');
+        const tokensOut = record.usage?.output ?? record.totalTokens;
+        setText('.cell-tokens', tokensOut ? String(tokensOut) : '-');
 
         const resultCell = row.querySelector('.cell-result');
         if (resultCell) {
@@ -1451,10 +1714,33 @@ class APITester {
         this.setText('detailStatus', i18n.t(record.status || 'testing'));
         this.setText('detailPrompt', record.prompt || '-');
         this.setText('detailResult', record.result || '');
-        this.setText('detailFirstToken', record.firstTokenTime != null ? record.firstTokenTime + ' ms' : '-');
-        this.setText('detailSpeed', record.outputSpeed ? Number(record.outputSpeed).toFixed(2) + ' t/s' : '-');
+        const ms = v => (v != null ? v + ' ms' : '-');
+        const tps = v => (v != null && Number.isFinite(Number(v)) ? Number(v).toFixed(2) + ' t/s' : '-');
+        this.setText('detailTarget', record.target || '-');
+        this.setText('detailPromptLen', i18n.t('promptLen', { n: record.promptChars ?? this.promptLength(record.prompt) }));
+        this.setText('detailHttp', record.httpStatus != null ? String(record.httpStatus) : '-');
+        this.setText('detailTtfb', ms(record.ttfb));
+        this.setText('detailFirstToken', ms(record.firstTokenTime));
+        this.setText('detailE2e', ms(record.totalLatency));
+        this.setText('detailGen', ms(record.genTime));
+        this.setText('detailTps', tps(record.outputSpeed));
+        this.setText('detailTpsGen', tps(this.tpsGenOf(record)));
+        this.setText('detailTpot', record.tpot != null ? Number(record.tpot).toFixed(2) + ' ms' : '-');
+        const times = Array.isArray(record.tokenTimes) ? record.tokenTimes : [];
+        const gaps = [];
+        for (let i = 1; i < times.length; i++) if (times[i] >= times[i - 1]) gaps.push(times[i] - times[i - 1]);
+        this.setText('detailItlP90', gaps.length ? Math.round(this.percentile(gaps, 90)) + ' ms' : '-');
+        this.setText('detailItlMax', gaps.length ? Math.round(Math.max(...gaps)) + ' ms' : '-');
+        this.setText('detailTokensIn', record.inputTokens != null ? String(record.inputTokens) : '-');
         this.setText('detailTokens',
             record.usage?.output != null ? String(record.usage.output) : (record.totalTokens || '-'));
+        this.setText('detailCached', record.usage?.cached != null ? String(record.usage.cached) : '-');
+        this.setText('detailReasoning', record.usage?.reasoning != null ? String(record.usage.reasoning) : '-');
+        this.setText('detailFinish', record.finishReason || '-');
+        const cost = this.computeCost(record.model,
+            record.inputTokens ?? null,
+            (record.usage?.output ?? record.totalTokens ?? 0) + (record.usage?.reasoning ?? 0));
+        this.setText('detailCost', cost != null ? '$' + cost.toFixed(6) : '-');
 
         const err = document.getElementById('detailError');
         if (err) {
@@ -1530,7 +1816,7 @@ class APITester {
             if (!stats[key]) {
                 stats[key] = {
                     model: r.model, target: r.target || '',
-                    firstTokenTimes: [], outputSpeeds: [], totalLatencies: [], tpots: [], tokenTimesList: [],
+                    firstTokenTimes: [], ttfbs: [], outputSpeeds: [], tpsGens: [], totalLatencies: [], tpots: [], tokenTimesList: [],
                     costs: [], prefillTps: [], inputTokensArr: [], outputTokensArr: [],
                     totalTests: 0, successfulTests: 0, failedTests: 0, cancelledTests: 0,
                     totalTokens: 0, errorTypes: {}
@@ -1548,7 +1834,10 @@ class APITester {
                 s.totalTests++;
                 s.successfulTests++;
                 if (r.firstTokenTime && r.firstTokenTime > 0) s.firstTokenTimes.push(r.firstTokenTime);
+                if (r.ttfb && r.ttfb > 0) s.ttfbs.push(r.ttfb);
                 if (r.outputSpeed && r.outputSpeed > 0) s.outputSpeeds.push(r.outputSpeed);
+                const genTps = this.tpsGenOf(r);
+                if (genTps && genTps > 0) s.tpsGens.push(genTps);
                 if (r.totalLatency && r.totalLatency > 0) s.totalLatencies.push(r.totalLatency);
                 if (r.tpot && r.tpot > 0) s.tpots.push(r.tpot);
                 if (Array.isArray(r.tokenTimes) && r.tokenTimes.length > 1) s.tokenTimesList.push(r.tokenTimes);
@@ -1592,12 +1881,14 @@ class APITester {
         const costSum = s.costs.length ? s.costs.reduce((a, b) => a + b, 0) : 0;
         return {
             avgFirstToken: avg(s.firstTokenTimes),
+            avgTtfb: avg(s.ttfbs),
             p50FirstToken: this.percentile(s.firstTokenTimes, 50),
             p90FirstToken: this.percentile(s.firstTokenTimes, 90),
             p95FirstToken: this.percentile(s.firstTokenTimes, 95),
             p99FirstToken: this.percentile(s.firstTokenTimes, 99),
             avgTotalLatency: avg(s.totalLatencies),
             avgOutputSpeed: avg(s.outputSpeeds),
+            avgTpsGen: avg(s.tpsGens),
             p50Speed: this.percentile(s.outputSpeeds, 50),
             p90Speed: this.percentile(s.outputSpeeds, 90),
             avgTpot: avg(s.tpots),
@@ -1656,6 +1947,7 @@ class APITester {
             row.innerHTML = `
                 <td class="stats-model" title="${this.escapeHtml(s.model)}">${this.escapeHtml(s.model)}</td>
                 <td class="stats-target" title="${this.escapeHtml(s.target)}">${this.escapeHtml(this.truncate(s.target, 30))}</td>
+                <td>${fmtMs(g.avgTtfb)}</td>
                 <td>${fmtMs(g.avgFirstToken)}</td>
                 <td>${fmtMs(g.p50FirstToken)}</td>
                 <td>${fmtMs(g.p90FirstToken)}</td>
@@ -1663,14 +1955,16 @@ class APITester {
                 <td>${fmtMs(g.p99FirstToken)}</td>
                 <td>${fmtMs(g.avgTotalLatency)}</td>
                 <td>${fmtSpeed(g.avgOutputSpeed)}</td>
-                <td>${fmtSpeed(g.p50Speed)}</td>
-                <td>${fmtSpeed(g.p90Speed)}</td>
+                <td>${fmtSpeed(g.avgTpsGen)}</td>
                 <td>${fmtMs(g.avgTpot)}</td>
                 <td title="${this.escapeHtml(itlTitle)}">${fmtMs(g.itlP90)}</td>
+                <td title="${this.escapeHtml(itlTitle)}">${fmtMs(g.itlMax)}</td>
                 <td>${g.avgPrefillTps !== null ? g.avgPrefillTps.toFixed(0) : '-'}</td>
+                <td>${g.maxOutputTokens !== null ? g.maxOutputTokens : '-'}</td>
                 <td>${s.totalTokens}</td>
                 <td title="${this.escapeHtml(costTitle)}">${g.avgCost !== null ? '$' + g.avgCost.toFixed(6) : '-'}</td>
                 <td class="stats-success-rate" data-rate="${this.escapeHtml(sr)}" title="${this.escapeHtml(srTitle)}">${sr}%</td>
+                <td title="${this.escapeHtml(srTitle)}">${g.errorRate.toFixed(1)}%</td>
             `;
             body.appendChild(row);
         });
@@ -1739,7 +2033,8 @@ class APITester {
             const existing = this.getHistoryRecords();
             existing.unshift(record);
             this.writeHistoryRecords(existing);
-            this.renderHistoryRecords();
+            // The tab renders itself when opened; redraw only if it is on screen.
+            if (document.getElementById('tab-history')?.hidden === false) this.renderHistoryRecords();
         } catch (err) {
             console.warn('Failed to save history:', err);
         }
@@ -1926,11 +2221,11 @@ class APITester {
     exportStatistics() {
         if (this.testResults.length === 0) { this.showToast(i18n.t('noStatsToExport'), 'info'); return; }
         const stats = this.computeStatistics();
-        // 23 headers ↔ 23 values, in this exact order.
-        const headers = ['model', 'target', 'averageFirstToken', 'p50FirstToken', 'p90FirstToken', 'p95FirstToken',
-            'p99FirstToken', 'totalLatency', 'averageOutputSpeed', 'p50Speed', 'p90Speed', 'tpot', 'itlP90', 'itlMax',
-            'inputTps', 'totalTokens', 'avgCost', 'tokensPerDollar', 'maxOutputTokens', 'avgInputTokens',
-            'avgOutputTokens', 'successRate', 'errorRate'].map(key => this.escapeCsv(i18n.t(key)));
+        // 25 headers ↔ 25 values, in this exact order.
+        const headers = ['model', 'target', 'mTtfb', 'averageFirstToken', 'p50FirstToken', 'p90FirstToken', 'p95FirstToken',
+            'p99FirstToken', 'totalLatency', 'averageOutputSpeed', 'mTpsGen', 'p50Speed', 'p90Speed', 'tpot',
+            'itlP90', 'itlMax', 'inputTps', 'totalTokens', 'avgCost', 'tokensPerDollar', 'maxOutputTokens',
+            'avgInputTokens', 'avgOutputTokens', 'successRate', 'errorRate'].map(key => this.escapeCsv(i18n.t(key)));
         const lines = [headers.join(',')];
 
         Object.keys(stats).forEach(key => {
@@ -1941,6 +2236,7 @@ class APITester {
                 .join(' ');
             const values = [
                 s.model, s.target,
+                g.avgTtfb !== null ? g.avgTtfb.toFixed(2) : '',
                 g.avgFirstToken !== null ? g.avgFirstToken.toFixed(2) : '',
                 g.p50FirstToken !== null ? g.p50FirstToken.toFixed(2) : '',
                 g.p90FirstToken !== null ? g.p90FirstToken.toFixed(2) : '',
@@ -1948,6 +2244,7 @@ class APITester {
                 g.p99FirstToken !== null ? g.p99FirstToken.toFixed(2) : '',
                 g.avgTotalLatency !== null ? g.avgTotalLatency.toFixed(2) : '',
                 g.avgOutputSpeed !== null ? g.avgOutputSpeed.toFixed(2) : '',
+                g.avgTpsGen !== null ? g.avgTpsGen.toFixed(2) : '',
                 g.p50Speed !== null ? g.p50Speed.toFixed(2) : '',
                 g.p90Speed !== null ? g.p90Speed.toFixed(2) : '',
                 g.avgTpot !== null ? g.avgTpot.toFixed(2) : '',
@@ -2017,9 +2314,13 @@ class APITester {
             if (fetchBtn && !fetchBtn.disabled) fetchBtn.textContent = i18n.t('fetchModels');
         });
         this.updateTargetLabels();
+        document.querySelectorAll('#targetList .target-row').forEach(row => this.updateTargetSummary(row));
+        this.refreshPromptMeta();
+        this.applyMetricLabels();
+        this.updateMatrixSummary();
         this.renderResults();
         this.displayStatistics(this.testResults.length ? this.computeStatistics() : {});
-        this.renderHistoryRecords();
+        if (document.getElementById('tab-history')?.hidden === false) this.renderHistoryRecords();
         const pinned = this.pinnedTestId
             ? this.testResults.find(r => r.testId === this.pinnedTestId)
             : null;

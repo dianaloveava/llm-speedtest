@@ -81,7 +81,13 @@ const PROTOCOLS = {
         },
         extractUsage(json) {
             const u = json.usage;
-            return u ? { input: u.prompt_tokens ?? null, output: u.completion_tokens ?? null, total: u.total_tokens ?? null } : null;
+            return u ? {
+                input: u.prompt_tokens ?? null,
+                output: u.completion_tokens ?? null,
+                total: u.total_tokens ?? null,
+                cached: u.prompt_tokens_details?.cached_tokens ?? null,
+                reasoning: u.completion_tokens_details?.reasoning_tokens ?? null
+            } : null;
         }
     },
 
@@ -135,7 +141,13 @@ const PROTOCOLS = {
         },
         extractUsage(json) {
             const u = json.response?.usage;
-            return u ? { input: u.input_tokens ?? null, output: u.output_tokens ?? null, total: u.total_tokens ?? null } : null;
+            return u ? {
+                input: u.input_tokens ?? null,
+                output: u.output_tokens ?? null,
+                total: u.total_tokens ?? null,
+                cached: u.input_tokens_details?.cached_tokens ?? null,
+                reasoning: u.output_tokens_details?.reasoning_tokens ?? null
+            } : null;
         }
     },
 
@@ -182,8 +194,12 @@ const PROTOCOLS = {
         },
         extractUsage(json) {
             if (json.type === 'message_start') {
-                const v = json.message?.usage?.input_tokens;
-                return v != null ? { input: v } : null;
+                const u = json.message?.usage || {};
+                if (u.input_tokens == null) return null;
+                return {
+                    input: u.input_tokens,
+                    cached: (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) || null
+                };
             }
             if (json.type === 'message_delta') {
                 const v = json.usage?.output_tokens;
@@ -239,7 +255,9 @@ const PROTOCOLS = {
                 input: u.promptTokenCount ?? null,
                 output: u.candidatesTokenCount ?? null,
                 total: u.totalTokenCount ?? null,
-                thoughts: u.thoughtsTokenCount ?? null
+                thoughts: u.thoughtsTokenCount ?? null,
+                reasoning: u.thoughtsTokenCount ?? null,
+                cached: u.cachedContentTokenCount ?? null
             } : null;
         }
     },
@@ -344,7 +362,12 @@ const PROTOCOLS = {
             if (!u) return null;
             const input = u.input_tokens ?? u.billed_units?.input_tokens ?? null;
             const output = u.output_tokens ?? u.billed_units?.output_tokens ?? null;
-            return { input, output, total: (input != null && output != null) ? input + output : null };
+            return {
+                input,
+                output,
+                total: (input != null && output != null) ? input + output : null,
+                cached: u.cached_tokens ?? u.billed_units?.cached_tokens ?? null
+            };
         }
     }
 };
@@ -647,6 +670,9 @@ class APIHandler {
             const timeout = ctlSignal.reason === 'timeout';
             return {
                 firstTokenTime: null,
+                ttfb: null,
+                genTime: null,
+                httpStatus: null,
                 outputSpeed: '0.00',
                 totalTokens: 0,
                 totalLatency: Date.now() - startTime,
@@ -668,6 +694,8 @@ class APIHandler {
                 body: JSON.stringify(built.body),
                 signal: ctlSignal
             });
+            // Headers are in: this is the first byte the client could read.
+            let ttfb = Date.now() - startTime;
 
             if (!response.ok) {
                 const errorData = await response.text();
@@ -682,6 +710,7 @@ class APIHandler {
                         body: JSON.stringify(retryBody),
                         signal: ctlSignal
                     });
+                    ttfb = Date.now() - startTime;
                     if (!response.ok) {
                         const retryData = await response.text();
                         throw new Error(`HTTP ${response.status}: ${sanitizeErrorBody(retryData)}`);
@@ -691,7 +720,10 @@ class APIHandler {
                 }
             }
 
-            const streamResult = await this.processStream(response, startTime, onProgress, ctlSignal);
+            const streamResult = await this.processStream(response, startTime, onProgress, ctlSignal, {
+                ttfb,
+                httpStatus: response.status
+            });
             streamResult.usage = streamResult.usage || null;
             streamResult.inputTokens = streamResult.usage?.input ?? estimateTokens(prompt);
             if (streamResult.usage?.output != null) streamResult.totalTokens = streamResult.usage.output;
@@ -724,12 +756,14 @@ class APIHandler {
     // Unified stream processor for sse + ndjson.
     // Handles \n and \r\n, aggregates multi-line SSE events, flushes the tail
     // (usage / done frames often arrive last), and always ends in finalizeStream.
-    async processStream(response, startTime, onProgress, signal) {
+    async processStream(response, startTime, onProgress, signal, meta = {}) {
         const spec = this.spec;
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         const state = {
             startTime,
+            ttfb: meta.ttfb ?? null,
+            httpStatus: meta.httpStatus ?? null,
             firstTokenTime: null,
             estRaw: 0,
             result: '',
@@ -789,11 +823,13 @@ class APIHandler {
 
             const u = spec.extractUsage ? spec.extractUsage(parsed) : null;
             if (u) {
+                // Copy whatever the protocol reported — usage frames arrive in
+                // pieces (Anthropic sends input first, output later) and new
+                // fields (cache, reasoning) must not be dropped by a whitelist.
                 state.usage = state.usage || {};
-                if (u.input != null) state.usage.input = u.input;
-                if (u.output != null) state.usage.output = u.output;
-                if (u.total != null) state.usage.total = u.total;
-                if (u.thoughts != null) state.usage.thoughts = u.thoughts;
+                for (const [field, value] of Object.entries(u)) {
+                    if (value !== null && value !== undefined) state.usage[field] = value;
+                }
             }
 
             const content = spec.extractDelta(parsed);
@@ -920,6 +956,9 @@ class APIHandler {
 
         return {
             firstTokenTime: state.firstTokenTime,
+            ttfb: state.ttfb,
+            httpStatus: state.httpStatus,
+            genTime: state.firstTokenTime != null ? Math.max(0, elapsed - state.firstTokenTime) : null,
             outputSpeed: (finalTokens > 0 ? finalTokens / (elapsed / 1000) : 0).toFixed(2),
             totalTokens: finalTokens,
             totalLatency: elapsed,

@@ -17,6 +17,7 @@ Thumbs.db
 node_modules/
 *.bak
 tmp/
+docs/
 
 # Tauri desktop shell
 dist/
